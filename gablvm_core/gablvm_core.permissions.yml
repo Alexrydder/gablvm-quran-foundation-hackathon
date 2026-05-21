@@ -1,0 +1,17 @@
+administer gablvm settings:
+  title: 'Administer GABLVM settings'
+  description: 'Configure API keys and module settings for GABLVM Core.'
+  restrict access: true
+
+access quran player:
+  title: 'Access Quran Player'
+  description: 'View and use the Quran Player feature.'
+
+access prayer times:
+  title: 'Access Prayer Times'
+  description: 'View prayer times based on location.'
+
+access hijri calendar:
+  title: 'Access Hijri Calendar'
+  description: 'View the Islamic Hijri calendar.'
+

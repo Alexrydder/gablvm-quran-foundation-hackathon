@@ -1,0 +1,2385 @@
+{#
+/**
+ * @file
+ * Simple Accessible Quran Player Template
+ *
+ * Uses native HTML5 audio controls for maximum accessibility.
+ * VoiceOver and screen readers handle native audio controls perfectly.
+ */
+#}
+<div class="quran-player" id="quran-player">
+
+  {# Greeting Message #}
+  {% if greeting_message %}
+  <div class="quran-greeting" role="status">
+    <p>{{ greeting_message }}</p>
+  </div>
+  {% endif %}
+
+  {# ===== SELECTION FORM ===== #}
+  <section class="quran-section quran-selection" aria-labelledby="selection-heading">
+    <h2 id="selection-heading" class="quran-section-heading">{{ 'Select Surah and Reciter'|t }}</h2>
+
+    <div class="quran-form">
+      <div class="quran-form-row">
+        <div class="quran-form-group">
+          <label for="surah-select" class="quran-label">{{ 'Surah'|t }}</label>
+          <select id="surah-select" class="quran-select">
+            {% for id, name in surahs %}
+            <option value="{{ id }}"{% if id == current_surah %} selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="quran-form-group">
+          <label for="reciter-select" class="quran-label">{{ 'Reciter'|t }}</label>
+          <select id="reciter-select" class="quran-select">
+            <option value=""{% if not reciter_preselected %} selected{% endif %}>{{ '-- Select a Reciter --'|t }}</option>
+            {% for id, name in chapter_reciters %}
+            <option value="{{ id }}"{% if reciter_preselected and id == current_reciter %} selected{% endif %}>{{ name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div class="quran-form-actions">
+        <button type="button" id="load-audio-btn" class="quran-btn quran-btn-primary">
+          {{ 'Load Surah'|t }}
+        </button>
+      </div>
+    </div>
+  </section>
+
+  {# ===== AUDIO PLAYER ===== #}
+  <section class="quran-section quran-audio-section" aria-labelledby="audio-heading">
+    <h2 id="audio-heading" class="quran-section-heading">{{ 'Audio Player'|t }}</h2>
+
+    {# Current Surah Info #}
+    <div class="quran-now-playing">
+      <p id="current-surah-name" class="quran-current-surah">
+        {{ 'Please select a reciter to begin'|t }}
+      </p>
+      <p class="quran-tafsir-link-wrap">
+        <a id="tafsir-for-surah-link" href="/quran/tafsir" class="quran-tafsir-link">
+          {{ 'Read commentary (tafsir) for this surah'|t }}
+        </a>
+      </p>
+
+      {# Quran.com integration: bookmark button + connect prompt.
+         The dashboard links open in a new tab so the listener can view
+         their bookmarks / streak without pausing the current recitation.
+         Same-tab navigation tears down the audio element; this preserves
+         playback continuity, which matters most for blind users who use
+         the recitation as the primary content. #}
+      {% if qf_connected %}
+        <p class="quran-qf-actions">
+          <button type="button" id="qf-bookmark-btn" class="quran-btn quran-btn-seek"
+                  aria-label="{{ 'Bookmark the current verse on Quran.com'|t }}">
+            {{ 'Bookmark this verse'|t }}
+          </button>
+          <span id="qf-bookmark-status" class="quran-form-status" role="status"></span>
+          &middot;
+          <a href="{{ qf_account_url }}" class="quran-tafsir-link"
+             target="_blank" rel="noopener noreferrer"
+             aria-label="{{ 'Go to my Quran.com dashboard (opens in new tab)'|t }}">{{ 'Go to my Quran.com dashboard'|t }}</a>
+        </p>
+      {% else %}
+        <p class="quran-qf-actions">
+          <a href="{{ qf_login_url }}" class="quran-tafsir-link">
+            {{ 'Connect your Quran.com account to bookmark verses'|t }}
+          </a>
+          &middot;
+          <a href="{{ qf_account_url }}" class="quran-tafsir-link"
+             target="_blank" rel="noopener noreferrer"
+             aria-label="{{ 'Go to my Quran.com dashboard (opens in new tab)'|t }}">{{ 'Go to my Quran.com dashboard'|t }}</a>
+        </p>
+      {% endif %}
+    </div>
+
+    {# Unified Player Controls: Skip Back | Play/Pause | Skip Forward #}
+    <div class="quran-player-controls" role="group" aria-label="{{ 'Audio playback controls'|t }}">
+      <button type="button" id="rewind-30-btn" class="quran-btn quran-btn-seek" aria-label="{{ 'Skip back 30 seconds'|t }}">
+        <span class="quran-btn-icon" aria-hidden="true">&#x23EA;</span>
+        <span class="quran-btn-label">30s</span>
+      </button>
+      <button type="button" id="rewind-10-btn" class="quran-btn quran-btn-seek" aria-label="{{ 'Skip back 10 seconds'|t }}">
+        <span class="quran-btn-icon" aria-hidden="true">&#x23EA;</span>
+        <span class="quran-btn-label">10s</span>
+      </button>
+      <button type="button" id="play-pause-btn" class="quran-btn quran-btn-play" aria-label="{{ 'Play'|t }}">
+        <span id="play-pause-text">{{ 'Play'|t }}</span>
+      </button>
+      <button type="button" id="forward-10-btn" class="quran-btn quran-btn-seek" aria-label="{{ 'Skip forward 10 seconds'|t }}">
+        <span class="quran-btn-label">10s</span>
+        <span class="quran-btn-icon" aria-hidden="true">&#x23E9;</span>
+      </button>
+      <button type="button" id="forward-30-btn" class="quran-btn quran-btn-seek" aria-label="{{ 'Skip forward 30 seconds'|t }}">
+        <span class="quran-btn-label">30s</span>
+        <span class="quran-btn-icon" aria-hidden="true">&#x23E9;</span>
+      </button>
+      <button type="button" id="mute-btn" class="quran-btn quran-btn-seek" aria-label="{{ 'Mute'|t }}">
+        <span id="mute-btn-text">{{ 'Mute'|t }}</span>
+      </button>
+    </div>
+
+    {# Keyboard Shortcuts Button #}
+    <div style="text-align:center; margin:0.5rem 0;">
+      <button type="button" id="shortcuts-help-btn" class="quran-btn" style="font-size:0.8125rem; padding:4px 12px;" aria-label="{{ 'Keyboard shortcuts (press question mark)'|t }}">
+        {{ 'Keyboard Shortcuts'|t }}
+      </button>
+    </div>
+    <script>
+    document.getElementById('shortcuts-help-btn').addEventListener('click', function() {
+      var dialog = document.getElementById('shortcuts-help-dialog');
+      if (dialog) {
+        var visible = dialog.style.display !== 'none';
+        dialog.style.display = visible ? 'none' : 'block';
+        if (!visible) dialog.focus();
+      }
+    });
+    </script>
+
+    {# Current Time Display #}
+    <div class="quran-time-display" id="time-display" aria-live="off"></div>
+
+    {# Seek Bar #}
+    <div class="quran-seek-container">
+      <input type="range" id="seek-bar" class="quran-seek-bar"
+             min="0" max="0" value="0" step="1"
+             aria-label="{{ 'Track position'|t }}"
+             aria-valuemin="0" aria-valuemax="0" aria-valuenow="0"
+             aria-valuetext="{{ '0 seconds of 0 seconds'|t }}" />
+    </div>
+
+    {# Double-buffered Audio Elements for seamless transitions #}
+    {# We swap between A and B: while one plays, the other preloads the next track #}
+    <audio id="quran-audio-a" preload="auto" playsinline webkit-playsinline style="display: none;"></audio>
+    <audio id="quran-audio-b" preload="auto" playsinline webkit-playsinline style="display: none;"></audio>
+
+    {# Status Messages #}
+    <div id="audio-status" class="quran-status" role="status" aria-live="polite"></div>
+
+    {# Inline JavaScript - Bulletproof approach: remove/re-add ended listener #}
+    <script>
+    (function() {
+      'use strict';
+
+      // ===== LOGGING =====
+      var debugLog = [];
+      function log(msg) {
+        var ts = new Date().toLocaleTimeString();
+        var entry = '[' + ts + '] ' + msg;
+        console.log('[QuranPlayer] ' + msg);
+        debugLog.push(entry);
+        if (debugLog.length > 200) debugLog.shift();
+        var el = document.getElementById('quran-debug-log');
+        if (el) {
+          el.textContent = debugLog.join('\n');
+          el.scrollTop = el.scrollHeight;
+        }
+      }
+      // Expose log() to other scripts (e.g., quran-player-qf.js) so the QF
+      // chapter-mode seek can surface its decisions in the on-page debug
+      // panel under ?debug=1, instead of only browser console.
+      window.gablvmDebugLog = log;
+
+      log('Starting...');
+
+      // ===== DOM ELEMENTS =====
+      // Double-buffered audio system: we swap between A and B for seamless transitions
+      var audioA = document.getElementById('quran-audio-a');
+      var audioB = document.getElementById('quran-audio-b');
+      var activeAudio = audioA;      // Currently playing audio element
+      var inactiveAudio = audioB;    // Preloading the next audio
+      var loadBtn = document.getElementById('load-audio-btn');
+      var surahSelect = document.getElementById('surah-select');
+      var reciterSelect = document.getElementById('reciter-select');
+      var statusEl = document.getElementById('audio-status');
+      var surahNameEl = document.getElementById('current-surah-name');
+      var prevBtn = document.getElementById('prev-surah-btn');
+      var nextBtn = document.getElementById('next-surah-btn');
+      var speedSelect = document.getElementById('speed-select');
+      var autoAdvanceCheckbox = null; // Resolved after DOM is ready
+      var timeDisplay = document.getElementById('time-display');
+      var seekBar = document.getElementById('seek-bar');
+      var isSeeking = false;
+      var playPauseBtn = document.getElementById('play-pause-btn');
+      var playPauseText = document.getElementById('play-pause-text');
+      var rewind30Btn = document.getElementById('rewind-30-btn');
+      var rewind10Btn = document.getElementById('rewind-10-btn');
+      var forward10Btn = document.getElementById('forward-10-btn');
+      var forward30Btn = document.getElementById('forward-30-btn');
+      var englishTranslationCheckbox = null; // Resolved after DOM is ready
+      var translationSelect = document.getElementById('translation-select');
+
+      if (!audioA || !audioB || !surahSelect || !reciterSelect) {
+        log('ERROR: Required elements not found');
+        return;
+      }
+
+      // ===== BOOKMARK DEEP-LINK =====
+      // /quran-listen?surah=X&verse=Y from the my-account bookmarks list
+      // arrives in drupalSettings. We stash it on window so the surah-load
+      // path in loadSurahVerseByVerse can jump to that verse on first load,
+      // then null it out so subsequent surah switches reset to verse 1.
+      // Drupal's drupalSettings JSON blob lives near the END of the body
+      // (around line 2900+ of the rendered HTML); the inline player script
+      // that contains this IIFE lives in the page body around line 770.
+      // That means window.drupalSettings is NOT yet defined at IIFE-parse
+      // time. Defer the bookmark target read to DOMContentLoaded — by then
+      // the JSON blob has been parsed and drupalSettings is available.
+      function readBookmarkTarget() {
+        try {
+          var qf_qs = (window.drupalSettings && drupalSettings.gablvmQuran) || {};
+          if (qf_qs.currentVerse && qf_qs.currentSurah) {
+            window.gablvmQuranInitialVerseTarget = {
+              surah: parseInt(qf_qs.currentSurah, 10),
+              verse: parseInt(qf_qs.currentVerse, 10)
+            };
+            log('Bookmark target set: surah ' + qf_qs.currentSurah + ' verse ' + qf_qs.currentVerse);
+          } else {
+            log('No bookmark target in drupalSettings (currentVerse=' + qf_qs.currentVerse + ', currentSurah=' + qf_qs.currentSurah + ')');
+          }
+        } catch (e) {
+          log('ERROR setting bookmark target: ' + e.message);
+        }
+      }
+      if (document.readyState === 'loading') {
+        document.addEventListener('DOMContentLoaded', readBookmarkTarget);
+      } else {
+        readBookmarkTarget();
+      }
+
+      // ===== STATE =====
+      var currentSurah = null;     // Currently loaded surah number
+      var currentReciter = null;   // Currently selected reciter ID
+      var pendingSurahUrl = null;  // Surah URL to play after Bismillah ends
+      var isBismillah = false;     // true if currently playing Bismillah
+      var cachedBismillahUrl = null; // Cached Bismillah URL for seek-to-start replay
+      var cachedSurahUrl = null;    // Cached surah URL for seek-to-start replay
+      var isLoading = false;       // true during fetch/load operations
+      var endedHandlerAttached = false; // Track if ended handler is attached
+
+      // Verse-by-verse mode with English translation state
+      var verseByVerseMode = false;      // true when in pure verse-by-verse mode (initial load with English)
+      var versesPlaylist = [];           // Array of verse objects from API
+      var currentVerseIndex = 0;         // Current position in playlist
+      var playingEnglish = false;        // true when playing English audio
+      var changingSource = false;        // true during intentional source changes (suppresses error messages)
+      var audioLoadedOk = false;         // true when audio has successfully loaded (canplaythrough fired)
+
+      // English overlay state (gapless Arabic + English injected at verse boundaries)
+      var englishOverlayActive = false;  // true when English is being overlaid on gapless audio
+      var overlayVerseData = [];         // verse data with timing + English audio URLs
+      var overlayCurrentVerse = -1;      // which verse the gapless audio is currently on
+      var overlayEnglishPlaying = false; // true when English overlay audio is playing
+      var overlayPreloadedUrl = null;    // URL preloaded into audioB for next English clip
+
+      // Double-buffering state
+      var nextAudioReady = false;        // true when inactive audio has finished loading
+      var nextAudioUrl = null;           // URL loaded in inactive audio element
+
+      // Reciters that support verse-by-verse audio (required for English translation)
+      // These reciters have individual verse audio files from the Quran API
+      var verseAudioReciters = [1, 2, 3, 4, 5, 6, 7, 9, 10, 12];
+      // 1: Abdul Basit (Mujawwad), 2: Abdul Basit (Murattal), 3: Sudais, 4: Abu Bakr al-Shatri
+      // 5: Hani ar-Rifai, 6: Al-Husary, 7: Mishari, 9: Al-Minshawi, 10: Shuraym, 12: Al-Husary (Muallim)
+
+      function reciterSupportsVersbyVerse(reciterId) {
+        return verseAudioReciters.indexOf(parseInt(reciterId, 10)) !== -1;
+      }
+
+      function updateEnglishCheckboxState() {
+        if (!englishTranslationCheckbox) return;
+        var reciterId = reciterSelect ? reciterSelect.value : '';
+        var isSupported = reciterId && reciterSupportsVersbyVerse(reciterId);
+        var wrapper = englishTranslationCheckbox.closest('.quran-checkbox-wrapper');
+
+        if (reciterId && !isSupported) {
+          // Reciter doesn't support verse-by-verse mode
+          englishTranslationCheckbox.disabled = true;
+          if (wrapper) wrapper.classList.add('quran-checkbox-disabled');
+          // If checkbox was checked, uncheck it
+          if (englishTranslationCheckbox.checked) {
+            englishTranslationCheckbox.checked = false;
+            // If we were in verse-by-verse mode, switch back to gapless
+            if (verseByVerseMode && currentSurah && currentReciter) {
+              verseByVerseMode = false;
+              versesPlaylist = [];
+              loadSurah(currentSurah, currentReciter, false);
+            }
+          }
+        } else {
+          // Reciter supports verse-by-verse or no reciter selected
+          englishTranslationCheckbox.disabled = false;
+          if (wrapper) wrapper.classList.remove('quran-checkbox-disabled');
+        }
+      }
+
+      // ===== UTILITY FUNCTIONS =====
+      function formatTime(secs) {
+        if (isNaN(secs) || secs < 0) return '0:00';
+        var m = Math.floor(secs / 60);
+        var s = Math.floor(secs % 60);
+        return m + ':' + (s < 10 ? '0' : '') + s;
+      }
+
+      function formatTimeVerbose(secs) {
+        if (isNaN(secs) || secs < 0) return '0 seconds';
+        var m = Math.floor(secs / 60);
+        var s = Math.floor(secs % 60);
+        if (m === 0) return s + ' second' + (s !== 1 ? 's' : '');
+        return m + ' minute' + (m !== 1 ? 's' : '') + ' ' + s + ' second' + (s !== 1 ? 's' : '');
+      }
+
+      function updateTimeDisplay() {
+        // In English overlay mode, always use gapless audio time (activeAudio)
+        // even when English is playing on audioB. The gapless audio's currentTime
+        // stays frozen at the verse boundary while paused, giving accurate surah progress.
+        var displayAudio = activeAudio;
+        var displayDuration = displayAudio.duration;
+        var displayTime = displayAudio.currentTime;
+
+        if (displayDuration && !isNaN(displayDuration)) {
+          // In verse-by-verse mode, show overall surah progress using timing data
+          if (verseByVerseMode && versesPlaylist.length > 0 && currentVerseIndex < versesPlaylist.length) {
+            var verse = versesPlaylist[currentVerseIndex];
+            var verseTimingStart = (verse.timing && verse.timing.start) ? verse.timing.start / 1000 : 0;
+            var lastVerse = versesPlaylist[versesPlaylist.length - 1];
+            var totalDuration = (lastVerse.timing && lastVerse.timing.end) ? lastVerse.timing.end / 1000 : 0;
+
+            var clipProgress = displayAudio.currentTime || 0;
+            var clipDuration = displayAudio.duration || 0;
+            var verseDuration = 0;
+            if (verse.timing && verse.timing.end) {
+              verseDuration = (verse.timing.end - verse.timing.start) / 1000;
+            }
+
+            var elapsed;
+            if (playingEnglish) {
+              elapsed = verse.timing && verse.timing.end ? verse.timing.end / 1000 : verseTimingStart + verseDuration;
+            } else {
+              if (clipDuration > 0 && verseDuration > 0) {
+                elapsed = verseTimingStart + (clipProgress / clipDuration * verseDuration);
+              } else {
+                elapsed = verseTimingStart + clipProgress;
+              }
+            }
+
+            if (totalDuration > 0) {
+              var displayElapsed = Math.min(elapsed, totalDuration);
+              if (timeDisplay) {
+                timeDisplay.textContent = formatTime(displayElapsed) + ' / ' + formatTime(totalDuration);
+              }
+              if (seekBar && !isSeeking) {
+                seekBar.max = Math.floor(totalDuration);
+                seekBar.value = Math.floor(displayElapsed);
+                seekBar.setAttribute('aria-valuemax', Math.floor(totalDuration));
+                seekBar.setAttribute('aria-valuenow', Math.floor(displayElapsed));
+                seekBar.setAttribute('aria-valuetext',
+                  formatTimeVerbose(displayElapsed) + ' of ' + formatTimeVerbose(totalDuration));
+              }
+              return;
+            }
+          }
+
+          // Default: show gapless audio time (works for both gapless and English overlay mode)
+          var dur = Math.floor(displayDuration);
+          var cur = Math.floor(displayTime);
+          if (timeDisplay) {
+            timeDisplay.textContent = formatTime(displayTime) + ' / ' + formatTime(displayDuration);
+          }
+          if (seekBar && !isSeeking) {
+            seekBar.max = dur;
+            seekBar.value = cur;
+            seekBar.setAttribute('aria-valuemax', dur);
+            seekBar.setAttribute('aria-valuenow', cur);
+            seekBar.setAttribute('aria-valuetext',
+              formatTimeVerbose(displayTime) + ' of ' + formatTimeVerbose(displayDuration));
+          }
+        }
+      }
+
+      function updatePlayPauseButton() {
+        if (playPauseBtn && playPauseText) {
+          // During English overlay, check audioB state instead
+          var isPlaying = (englishOverlayActive && overlayEnglishPlaying)
+            ? !audioB.paused
+            : !activeAudio.paused;
+          var txt = isPlaying ? 'Pause' : 'Play';
+          playPauseText.textContent = txt;
+          playPauseBtn.setAttribute('aria-label', txt);
+        }
+      }
+
+      function applySpeed() {
+        var _ss = speedSelect || document.getElementById('speed-select');
+        var speed = parseFloat(_ss ? _ss.value : 1) || 1;
+        audioA.playbackRate = speed;
+        audioB.playbackRate = speed;
+      }
+
+      function goToPrevSurah() {
+        var reciter = reciterSelect.value;
+        if (!reciter) { setStatus('Please select a reciter'); return; }
+        var idx = surahSelect.selectedIndex;
+        if (idx > 0) {
+          surahSelect.selectedIndex = idx - 1;
+          loadSurahWithMode(surahSelect.value, reciter, true);
+        }
+      }
+
+      function goToNextSurah() {
+        var reciter = reciterSelect.value;
+        if (!reciter) { setStatus('Please select a reciter'); return; }
+        var idx = surahSelect.selectedIndex;
+        if (idx < surahSelect.options.length - 1) {
+          surahSelect.selectedIndex = idx + 1;
+          loadSurahWithMode(surahSelect.value, reciter, true);
+        }
+      }
+
+      function updateSurahName() {
+        if (surahNameEl && surahSelect) {
+          var opt = surahSelect.options[surahSelect.selectedIndex];
+          if (opt) {
+            surahNameEl.textContent = opt.text.substring(0, 50);
+          }
+        }
+        var tafsirLink = document.getElementById('tafsir-for-surah-link');
+        if (tafsirLink && surahSelect && surahSelect.value) {
+          tafsirLink.setAttribute('href', '/quran/tafsir?surah=' + encodeURIComponent(surahSelect.value));
+        }
+      }
+
+      function setStatus(msg, silent) {
+        if (statusEl) {
+          // If silent mode, temporarily disable aria-live to prevent screen reader announcements
+          if (silent) {
+            statusEl.setAttribute('aria-live', 'off');
+          }
+          statusEl.textContent = msg || '';
+          // Restore aria-live after a brief delay if it was silenced
+          if (silent) {
+            setTimeout(function() {
+              statusEl.setAttribute('aria-live', 'polite');
+            }, 100);
+          }
+        }
+      }
+
+      // ===== ENGLISH AUDIO URL HELPERS =====
+      function getEnglishAudioUrl(verseKey) {
+        // verseKey format: "1:5" or "2:255"
+        if (!verseKey || verseKey === 'bismillah') {
+          return null;
+        }
+        var parts = verseKey.split(':');
+        if (parts.length !== 2) return null;
+        var surahNum = parseInt(parts[0], 10);
+        var verseNum = parseInt(parts[1], 10);
+
+        var surah = String(surahNum).padStart(3, '0');
+        var verse = String(verseNum).padStart(3, '0');
+        return 'https://cdn.gablvm.org/quran-audio/ibrahim-walk-english/verse/' + surah + verse + '.mp3';
+      }
+
+      function getEnglishBismillahUrl(surahNum) {
+        // Use Surah 1 verse 1 English audio (001001.mp3) for ALL Bismillah translations
+        // This provides a consistent, accurate translation across all surahs
+        if (surahNum === 9) return null; // No bismillah for Surah 9
+        if (surahNum === 1) return null; // Surah 1's Bismillah IS verse 1, handled by getEnglishAudioUrl
+        // Use 001001.mp3 (Surah 1 verse 1) which has the accurate Bismillah translation
+        return 'https://cdn.gablvm.org/quran-audio/ibrahim-walk-english/verse/001001.mp3';
+      }
+
+      // ===== DOUBLE-BUFFERING AUDIO SYSTEM =====
+      // While activeAudio plays, inactiveAudio preloads the next track.
+      // When activeAudio ends, we instantly play inactiveAudio (already loaded!)
+      // Then swap the pointers and preload the next track.
+
+      function swapAudioElements() {
+        // Swap active and inactive
+        var temp = activeAudio;
+        activeAudio = inactiveAudio;
+        inactiveAudio = temp;
+        log('Swapped audio elements. Active is now: ' + activeAudio.id);
+      }
+
+      function preloadIntoInactive(url) {
+        if (!url) {
+          nextAudioReady = false;
+          nextAudioUrl = null;
+          return;
+        }
+        if (url === nextAudioUrl && nextAudioReady) {
+          log('Already preloaded in inactive: ' + url);
+          return;
+        }
+        nextAudioUrl = url;
+        nextAudioReady = false;
+        inactiveAudio.src = url;
+        inactiveAudio.load();
+        log('Preloading into ' + inactiveAudio.id + ': ' + url);
+      }
+
+      // Set up canplaythrough listeners for both audio elements
+      function setupAudioListeners(audioEl) {
+        audioEl.addEventListener('canplaythrough', function() {
+          if (audioEl === inactiveAudio && audioEl.src && audioEl.src.indexOf('.mp3') !== -1) {
+            nextAudioReady = true;
+            log('Inactive audio ready: ' + audioEl.id);
+          }
+          if (audioEl === activeAudio) {
+            audioLoadedOk = true;
+          }
+          applySpeed();
+        });
+        audioEl.addEventListener('error', function() {
+          if (audioEl === inactiveAudio) {
+            nextAudioReady = false;
+            log('Inactive audio error: ' + audioEl.id);
+          }
+          if (audioEl === activeAudio && !changingSource) {
+            setStatus('Playback error');
+          }
+        });
+        audioEl.addEventListener('timeupdate', function() {
+          if (audioEl === activeAudio) {
+            updateTimeDisplay();
+            checkOverlayBoundary();
+          }
+        });
+        audioEl.addEventListener('playing', function() {
+          if (audioEl === activeAudio || (overlayEnglishPlaying && audioEl === audioB)) {
+            updatePlayPauseButton();
+          }
+        });
+        audioEl.addEventListener('pause', function() {
+          if (audioEl === activeAudio || (overlayEnglishPlaying && audioEl === audioB)) {
+            updatePlayPauseButton();
+          }
+        });
+      }
+      setupAudioListeners(audioA);
+      setupAudioListeners(audioB);
+
+      // ===== SEEK BAR LISTENERS =====
+      if (seekBar) {
+        var seekDebounceTimer = null;
+        seekBar.addEventListener('input', function() {
+          isSeeking = true;
+          if (seekDebounceTimer) { clearTimeout(seekDebounceTimer); seekDebounceTimer = null; }
+
+          // In verse-by-verse mode, the seek bar represents overall surah time
+          if (verseByVerseMode && versesPlaylist.length > 0) {
+            var seekTime = parseFloat(seekBar.value);
+            var lastVerse = versesPlaylist[versesPlaylist.length - 1];
+            var totalDuration = (lastVerse.timing && lastVerse.timing.end) ? lastVerse.timing.end / 1000 : 0;
+            if (timeDisplay && totalDuration > 0) {
+              timeDisplay.textContent = formatTime(seekTime) + ' / ' + formatTime(totalDuration);
+              seekBar.setAttribute('aria-valuetext',
+                formatTimeVerbose(seekTime) + ' of ' + formatTimeVerbose(totalDuration));
+            }
+          } else if (activeAudio.duration && !isNaN(activeAudio.duration)) {
+            var seekTime = parseFloat(seekBar.value);
+            // Seek audio immediately on each swipe for instant response
+            activeAudio.currentTime = seekTime;
+            if (timeDisplay) {
+              timeDisplay.textContent = formatTime(seekTime) + ' / ' + formatTime(activeAudio.duration);
+            }
+            seekBar.setAttribute('aria-valuetext',
+              formatTimeVerbose(seekTime) + ' of ' + formatTimeVerbose(activeAudio.duration));
+          }
+        });
+        seekBar.addEventListener('change', function() {
+          // In verse-by-verse mode, seeking jumps to the right verse
+          if (verseByVerseMode && versesPlaylist.length > 0) {
+            var seekTimeMs = parseFloat(seekBar.value) * 1000;
+            var targetIndex = 0;
+            for (var i = 0; i < versesPlaylist.length; i++) {
+              var timing = versesPlaylist[i].timing;
+              if (timing && timing.end > 0 && seekTimeMs < timing.end) {
+                targetIndex = i;
+                break;
+              }
+              if (i === versesPlaylist.length - 1) targetIndex = i;
+            }
+            log('Seek bar: jumping to verse index ' + targetIndex + ' (' + (versesPlaylist[targetIndex].is_bismillah ? 'Bismillah' : versesPlaylist[targetIndex].verse_key) + ')');
+            currentVerseIndex = targetIndex;
+            playingEnglish = false;
+            playCurrentVerse();
+            if (seekDebounceTimer) { clearTimeout(seekDebounceTimer); }
+            seekDebounceTimer = setTimeout(function() {
+              isSeeking = false;
+              seekDebounceTimer = null;
+            }, 150);
+            return;
+          }
+
+          if (activeAudio.duration && !isNaN(activeAudio.duration)) {
+            var seekVal = parseFloat(seekBar.value);
+            // If seeking to the very start in gapless mode and this surah has Bismillah,
+            // replay from Bismillah instead of from surah start
+            if (seekVal === 0 && !verseByVerseMode && !isBismillah && cachedBismillahUrl && cachedSurahUrl) {
+              log('Seek to start: replaying from Bismillah');
+              removeEndedHandler();
+              changingSource = true;
+              pendingSurahUrl = cachedSurahUrl;
+              isBismillah = true;
+              activeAudio.src = cachedBismillahUrl;
+              activeAudio.load();
+              applySpeed();
+              activeAudio.play().then(function() {
+                changingSource = false;
+                setTimeout(attachEndedHandler, 200);
+              }).catch(function(e) {
+                changingSource = false;
+                setTimeout(attachEndedHandler, 200);
+              });
+            }
+          }
+          // Delay releasing isSeeking so timeupdate doesn't snap the slider back
+          if (seekDebounceTimer) { clearTimeout(seekDebounceTimer); }
+          seekDebounceTimer = setTimeout(function() {
+            isSeeking = false;
+            seekDebounceTimer = null;
+          }, 150);
+        });
+      }
+
+      // Get the URL that should be played next (for preloading)
+      function getNextAudioUrl() {
+        if (!verseByVerseMode || versesPlaylist.length === 0) return null;
+
+        if (playingEnglish) {
+          // Currently playing English, next is Arabic of next verse
+          var nextIndex = currentVerseIndex + 1;
+          if (nextIndex < versesPlaylist.length) {
+            return versesPlaylist[nextIndex].audio_url;
+          }
+        } else {
+          // Currently playing Arabic, next is English (if enabled)
+          if (englishTranslationCheckbox && englishTranslationCheckbox.checked) {
+            var verse = versesPlaylist[currentVerseIndex];
+            if (verse.is_bismillah) {
+              return getEnglishBismillahUrl(currentSurah);
+            } else {
+              return getEnglishAudioUrl(verse.verse_key);
+            }
+          } else {
+            // English disabled, next is Arabic of next verse
+            var nextIndex = currentVerseIndex + 1;
+            if (nextIndex < versesPlaylist.length) {
+              return versesPlaylist[nextIndex].audio_url;
+            }
+          }
+        }
+        return null;
+      }
+
+      // Play the preloaded audio instantly by swapping
+      function playPreloadedAudio() {
+        if (!nextAudioReady || !nextAudioUrl) {
+          log('Preloaded audio not ready, cannot swap');
+          return false;
+        }
+        log('Playing preloaded audio instantly via swap');
+        // Swap so the preloaded audio becomes active
+        swapAudioElements();
+        nextAudioReady = false;
+        nextAudioUrl = null;
+        applySpeed();
+        return true;
+      }
+
+      // ===== VERSE-BY-VERSE MODE FUNCTIONS =====
+      function loadSurahVerseByVerse(surahNum, reciterId, autoPlay, resumeFromTime) {
+        surahNum = parseInt(surahNum, 10);
+        reciterId = parseInt(reciterId, 10);
+        var translationId = translationSelect ? parseInt(translationSelect.value, 10) : 85;
+
+        if (!reciterId || isNaN(reciterId)) {
+          setStatus('Please select a reciter');
+          return;
+        }
+
+        if (isLoading) {
+          log('Already loading, ignoring request');
+          return;
+        }
+
+        log('loadSurahVerseByVerse(' + surahNum + ', reciter=' + reciterId + ', autoPlay=' + autoPlay + ')');
+
+        // Snapshot so a failed verses fetch can restore state (same pattern
+        // as loadSurah — see that function's comment for the full rationale).
+        var prevSurah = currentSurah;
+        var prevReciter = currentReciter;
+        var prevVerseByVerse = verseByVerseMode;
+        var prevPlaylist = versesPlaylist;
+        var prevVerseIndex = currentVerseIndex;
+        var prevDropdownValue = surahSelect ? surahSelect.value : '';
+
+        // Pause but don't wipe src yet.
+        changingSource = true;  // Suppress error events during source clearing
+        removeEndedHandler();
+        audioA.pause();
+        audioB.pause();
+        nextAudioReady = false;
+        nextAudioUrl = null;
+
+        // Update state
+        isLoading = true;
+        currentSurah = surahNum;
+        currentReciter = reciterId;
+        verseByVerseMode = true;
+        playingEnglish = false;
+        versesPlaylist = [];
+        currentVerseIndex = 0;
+
+        // Sync dropdown
+        if (surahSelect.value !== String(surahNum)) {
+          surahSelect.value = String(surahNum);
+        }
+
+        updateSurahName();
+        setStatus('Loading verses...');
+
+        // Fetch verses from API
+        fetch('/api/quran/verses/' + surahNum + '/' + reciterId + '/' + translationId)
+          .then(function(resp) {
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.json();
+          })
+          .then(function(data) {
+            isLoading = false;
+            log('Verses API response: ' + (data.success ? data.verses.length + ' verses' : 'failed'));
+
+            if (!data.success || !data.verses || data.verses.length === 0) {
+              changingSource = false;
+              // Roll back the state we mutated up top so the player stays on
+              // the previously loaded surah instead of going dead.
+              currentSurah = prevSurah;
+              currentReciter = prevReciter;
+              verseByVerseMode = prevVerseByVerse;
+              versesPlaylist = prevPlaylist;
+              currentVerseIndex = prevVerseIndex;
+              if (surahSelect && prevDropdownValue && surahSelect.value !== prevDropdownValue) {
+                surahSelect.value = prevDropdownValue;
+              }
+              updateSurahName();
+              setStatus('Error loading verses');
+              return;
+            }
+
+            // New data confirmed — now it's safe to wipe the old audio and
+            // swap in a fresh state.
+            audioA.currentTime = 0;
+            audioB.currentTime = 0;
+            audioA.src = '';
+            audioB.src = '';
+            activeAudio = audioA;
+            inactiveAudio = audioB;
+
+            versesPlaylist = data.verses;
+            currentVerseIndex = 0;
+            playingEnglish = false;
+            changingSource = false;  // Ready to play, clear the flag
+
+            // Bookmark deep-link: if the URL had ?verse=N for THIS surah,
+            // start at that verse on this first playlist load. window.gablvm-
+            // QuranInitialVerseTarget is set once from drupalSettings and
+            // cleared after first use so subsequent surah switches reset to 1.
+            if (window.gablvmQuranInitialVerseTarget &&
+                window.gablvmQuranInitialVerseTarget.surah === surahNum) {
+              var targetKey = surahNum + ':' + window.gablvmQuranInitialVerseTarget.verse;
+              for (var vi = 0; vi < versesPlaylist.length; vi++) {
+                if (versesPlaylist[vi].verse_key === targetKey) {
+                  currentVerseIndex = vi;
+                  log('Bookmark deep-link: starting at verse ' + targetKey + ' (index ' + vi + ')');
+                  break;
+                }
+              }
+              window.gablvmQuranInitialVerseTarget = null;
+            }
+
+            // If resuming from a gapless playback position, find the matching verse
+            if (resumeFromTime !== undefined && resumeFromTime > 0) {
+              var resumeTimeMs = resumeFromTime * 1000;
+              for (var i = 0; i < versesPlaylist.length; i++) {
+                var timing = versesPlaylist[i].timing;
+                if (timing && timing.end > 0 && resumeTimeMs < timing.end) {
+                  currentVerseIndex = i;
+                  break;
+                }
+              }
+              // Clamp to valid range
+              if (currentVerseIndex >= versesPlaylist.length) {
+                currentVerseIndex = Math.max(0, versesPlaylist.length - 1);
+              }
+              var resumeVerse = versesPlaylist[currentVerseIndex];
+              log('Resuming from verse index ' + currentVerseIndex + ' (' + (resumeVerse.is_bismillah ? 'Bismillah' : resumeVerse.verse_key) + ') at gapless time ' + resumeFromTime.toFixed(1) + 's');
+            }
+
+            if (autoPlay) {
+              playCurrentVerse();
+            } else {
+              setStatus('Ready - press Play');
+              if (playPauseBtn) playPauseBtn.focus();
+            }
+          })
+          .catch(function(err) {
+            isLoading = false;
+            changingSource = false;
+            log('Verses fetch error: ' + err.message);
+            // Roll back so the previous surah remains playable.
+            currentSurah = prevSurah;
+            currentReciter = prevReciter;
+            verseByVerseMode = prevVerseByVerse;
+            versesPlaylist = prevPlaylist;
+            currentVerseIndex = prevVerseIndex;
+            if (surahSelect && prevDropdownValue && surahSelect.value !== prevDropdownValue) {
+              surahSelect.value = prevDropdownValue;
+            }
+            updateSurahName();
+            setStatus('Error loading verses. Press Play to retry.');
+          });
+      }
+
+      function playCurrentVerse() {
+        if (currentVerseIndex >= versesPlaylist.length) {
+          // Surah finished
+          log('Verse-by-verse surah ' + currentSurah + ' finished');
+          verseByVerseMode = false;
+          versesPlaylist = [];
+
+          // Check for auto-advance to next surah
+          log('VBV AUTO-ADVANCE CHECK: checkbox=' + !!autoAdvanceCheckbox + ', checked=' + (autoAdvanceCheckbox ? autoAdvanceCheckbox.checked : 'N/A') + ', currentSurah=' + currentSurah + ', currentReciter=' + currentReciter);
+          if (autoAdvanceCheckbox && autoAdvanceCheckbox.checked && currentSurah < 114) {
+            var nextSurah = currentSurah + 1;
+            log('VBV auto-advancing to surah ' + nextSurah);
+            setStatus('Loading next surah...');
+            setTimeout(function() {
+              log('VBV auto-advance timeout fired: loading surah ' + nextSurah);
+              loadSurahWithMode(nextSurah, currentReciter, true);
+            }, 200);
+          } else {
+            log('VBV NOT auto-advancing: checkbox=' + (autoAdvanceCheckbox ? autoAdvanceCheckbox.checked : 'null') + ', surah=' + currentSurah);
+            setStatus('Surah complete');
+            updatePlayPauseButton();
+          }
+          return;
+        }
+
+        var verse = versesPlaylist[currentVerseIndex];
+        playingEnglish = false;
+
+        // Publish current surah:verse for the bookmark button to capture.
+        // verse_key is "S:V" — split, store, used by quran-player-qf.js.
+        if (verse && verse.verse_key && !verse.is_bismillah) {
+          var vk = verse.verse_key.split(':');
+          if (vk.length === 2) {
+            window.gablvmCurrentSurahVerse = {
+              surah: parseInt(vk[0], 10),
+              verse: parseInt(vk[1], 10)
+            };
+          }
+        }
+
+        // Check if this reciter has verse-by-verse audio
+        if (!verse.audio_url) {
+          log('No verse audio URL for this reciter - verse-by-verse mode not supported');
+          setStatus('This reciter does not support verse-by-verse playback. Please choose a different reciter or disable English translation.');
+          verseByVerseMode = false;
+          versesPlaylist = [];
+          return;
+        }
+
+        log('Playing Arabic: ' + (verse.is_bismillah ? 'Bismillah' : verse.verse_key) + ' URL: ' + verse.audio_url);
+
+        changingSource = true;
+        audioLoadedOk = false;
+        removeEndedHandler();
+
+        // Check if this URL is already preloaded in the inactive audio element
+        if (nextAudioUrl === verse.audio_url && nextAudioReady) {
+          // INSTANT SWAP: Use the preloaded audio
+          log('INSTANT SWAP: Using preloaded audio for Arabic verse');
+          swapAudioElements();
+          nextAudioReady = false;
+          nextAudioUrl = null;
+          applySpeed();
+          activeAudio.play().then(function() {
+            changingSource = false;
+            var label = verse.is_bismillah ? 'Bismillah' : 'Verse ' + verse.verse_key;
+            setStatus('Arabic: ' + label, true);
+            setTimeout(attachEndedHandler, 100);
+            // Preload the NEXT audio (English for this verse)
+            var nextUrl = getNextAudioUrl();
+            if (nextUrl) preloadIntoInactive(nextUrl);
+          }).catch(function(e) {
+            changingSource = false;
+            log('Instant play failed: ' + e.message);
+            setStatus('Press Play to continue');
+            setTimeout(attachEndedHandler, 100);
+          });
+        } else {
+          // NORMAL LOAD: Load into active audio element
+          log('Normal load into active audio');
+          activeAudio.src = verse.audio_url;
+          activeAudio.load();
+          applySpeed();
+          activeAudio.play().then(function() {
+            setTimeout(function() { changingSource = false; }, 500);
+            var label = verse.is_bismillah ? 'Bismillah' : 'Verse ' + verse.verse_key;
+            setStatus('Arabic: ' + label, true);
+            setTimeout(attachEndedHandler, 100);
+            // Preload the NEXT audio (English for this verse)
+            var nextUrl = getNextAudioUrl();
+            if (nextUrl) preloadIntoInactive(nextUrl);
+          }).catch(function(e) {
+            setTimeout(function() { changingSource = false; }, 500);
+            log('Play failed: ' + e.message);
+            setStatus('Press Play to continue');
+            setTimeout(attachEndedHandler, 100);
+          });
+        }
+      }
+
+      function playEnglishForCurrentVerse() {
+        var verse = versesPlaylist[currentVerseIndex];
+        var englishUrl;
+
+        log('playEnglishForCurrentVerse: verse_key=' + verse.verse_key + ', is_bismillah=' + verse.is_bismillah + ', surah=' + currentSurah);
+
+        if (verse.is_bismillah) {
+          englishUrl = getEnglishBismillahUrl(currentSurah);
+          log('Using bismillah URL: ' + englishUrl);
+        } else {
+          englishUrl = getEnglishAudioUrl(verse.verse_key);
+          log('Using verse URL: ' + englishUrl);
+        }
+
+        if (!englishUrl) {
+          // No English audio available, skip to next verse
+          log('No English audio for ' + (verse.is_bismillah ? 'Bismillah' : verse.verse_key) + ', skipping');
+          currentVerseIndex++;
+          playCurrentVerse();
+          return;
+        }
+
+        playingEnglish = true;
+        log('Playing English: ' + (verse.is_bismillah ? 'Bismillah' : verse.verse_key) + ' URL: ' + englishUrl);
+
+        changingSource = true;
+        audioLoadedOk = false;
+        removeEndedHandler();
+
+        // Check if this URL is already preloaded in the inactive audio element
+        if (nextAudioUrl === englishUrl && nextAudioReady) {
+          // INSTANT SWAP: Use the preloaded audio
+          log('INSTANT SWAP: Using preloaded audio for English');
+          swapAudioElements();
+          nextAudioReady = false;
+          nextAudioUrl = null;
+          applySpeed();
+          activeAudio.play().then(function() {
+            changingSource = false;
+            var label = verse.is_bismillah ? 'Bismillah' : 'Verse ' + verse.verse_key;
+            setStatus('English: ' + label, true);
+            setTimeout(attachEndedHandler, 100);
+            // Preload the NEXT audio (Arabic of next verse)
+            var nextUrl = getNextAudioUrl();
+            if (nextUrl) preloadIntoInactive(nextUrl);
+          }).catch(function(e) {
+            changingSource = false;
+            log('Instant English play failed: ' + e.message);
+            currentVerseIndex++;
+            playCurrentVerse();
+          });
+        } else {
+          // NORMAL LOAD: Load into active audio element
+          log('Normal load English into active audio');
+          activeAudio.src = englishUrl;
+          activeAudio.load();
+          applySpeed();
+          activeAudio.play().then(function() {
+            setTimeout(function() { changingSource = false; }, 500);
+            var label = verse.is_bismillah ? 'Bismillah' : 'Verse ' + verse.verse_key;
+            setStatus('English: ' + label, true);
+            setTimeout(attachEndedHandler, 100);
+            // Preload the NEXT audio (Arabic of next verse)
+            var nextUrl = getNextAudioUrl();
+            if (nextUrl) preloadIntoInactive(nextUrl);
+          }).catch(function(e) {
+            setTimeout(function() { changingSource = false; }, 500);
+            log('English play failed: ' + e.message);
+            currentVerseIndex++;
+            playCurrentVerse();
+          });
+        }
+      }
+
+      // ===== ENGLISH OVERLAY MODE =====
+      // Keeps gapless Arabic audio playing and injects English at verse boundaries.
+      // No mode switching, no restart — Arabic never stops loading/buffering.
+
+      function startEnglishOverlay() {
+        if (englishOverlayActive || !currentSurah || !currentReciter) return;
+
+        var translationId = translationSelect ? parseInt(translationSelect.value, 10) : 85;
+        setStatus('Loading English translation...');
+        log('Starting English overlay for surah ' + currentSurah);
+
+        fetch('/api/quran/verses/' + currentSurah + '/' + currentReciter + '/' + translationId)
+          .then(function(resp) { return resp.json(); })
+          .then(function(data) {
+            if (!data.success || !data.verses || data.verses.length === 0) {
+              setStatus('Could not load translation data');
+              if (englishTranslationCheckbox) englishTranslationCheckbox.checked = false;
+              return;
+            }
+
+            overlayVerseData = data.verses;
+            englishOverlayActive = true;
+            overlayCurrentVerse = -1;
+            overlayEnglishPlaying = false;
+
+            // Find which verse the gapless audio is currently on
+            var currentMs = activeAudio.currentTime * 1000;
+            for (var i = 0; i < overlayVerseData.length; i++) {
+              var timing = overlayVerseData[i].timing;
+              if (timing && timing.end > 0 && currentMs < timing.end) {
+                overlayCurrentVerse = i;
+                break;
+              }
+            }
+
+            log('English overlay ready: ' + overlayVerseData.length + ' verses, starting at verse index ' + overlayCurrentVerse);
+
+            // Preload English audio for the current verse
+            preloadOverlayEnglish(overlayCurrentVerse);
+
+            setStatus('English translation enabled');
+          })
+          .catch(function(err) {
+            log('English overlay fetch error: ' + err.message);
+            setStatus('Could not load translation data');
+            if (englishTranslationCheckbox) englishTranslationCheckbox.checked = false;
+          });
+      }
+
+      function stopEnglishOverlay() {
+        log('Stopping English overlay');
+        englishOverlayActive = false;
+
+        if (overlayEnglishPlaying) {
+          // Currently playing English — stop it and resume gapless Arabic
+          overlayEnglishPlaying = false;
+          audioB.pause();
+          audioB.volume = 0;
+          audioB.removeEventListener('ended', onOverlayEnglishEnded);
+          audioB.src = '';
+
+          // Resume gapless Arabic from where it was paused
+          activeAudio.volume = 1;
+          activeAudio.play().catch(function() {});
+          setStatus('');
+        }
+
+        // Ensure Arabic volume is always restored
+        activeAudio.volume = 1;
+        overlayVerseData = [];
+        overlayCurrentVerse = -1;
+        overlayPreloadedUrl = null;
+      }
+
+      function preloadOverlayEnglish(verseIndex) {
+        if (verseIndex < 0 || verseIndex >= overlayVerseData.length) return;
+
+        var verse = overlayVerseData[verseIndex];
+        var englishUrl;
+
+        if (verse.is_bismillah) {
+          englishUrl = getEnglishBismillahUrl(currentSurah);
+        } else {
+          englishUrl = getEnglishAudioUrl(verse.verse_key);
+        }
+
+        if (!englishUrl || englishUrl === overlayPreloadedUrl) return;
+
+        overlayPreloadedUrl = englishUrl;
+        audioB.src = englishUrl;
+        audioB.load();
+        log('Preloading overlay English for ' + (verse.is_bismillah ? 'Bismillah' : verse.verse_key));
+      }
+
+      // Called from timeupdate — checks if gapless audio has crossed a verse boundary.
+      // Only scans forward from overlayCurrentVerse to avoid re-triggering past verses.
+      // Buffer gives the reciter time to fully finish the verse — word-level timestamps
+      // mark the end of the last syllable, but reciters hold notes and trail off naturally.
+      var OVERLAY_BOUNDARY_BUFFER_MS = 800;
+
+      function checkOverlayBoundary() {
+        if (!englishOverlayActive || overlayEnglishPlaying) return;
+        if (overlayVerseData.length === 0 || activeAudio.paused) return;
+
+        var currentMs = activeAudio.currentTime * 1000;
+
+        // Scan from current verse onward only
+        for (var i = Math.max(0, overlayCurrentVerse); i < overlayVerseData.length; i++) {
+          var timing = overlayVerseData[i].timing;
+          if (!timing || timing.end <= 0) continue;
+          if (overlayVerseData[i].is_bismillah) continue;
+
+          // Still within this verse (including buffer) — preload English and wait
+          if (currentMs < timing.end + OVERLAY_BOUNDARY_BUFFER_MS) {
+            if (i !== overlayCurrentVerse) {
+              overlayCurrentVerse = i;
+              preloadOverlayEnglish(i);
+              var label = 'Verse ' + overlayVerseData[i].verse_key;
+              setStatus('Arabic: ' + label, true);
+            }
+            return;
+          }
+
+          // Past this verse's end — play English for it and advance
+          log('Overlay boundary: verse ' + overlayVerseData[i].verse_key + ' ended at ' + (timing.end / 1000).toFixed(1) + 's');
+          overlayCurrentVerse = i + 1; // advance PAST this verse so it never re-triggers
+          activeAudio.pause();
+          activeAudio.volume = 0; // mute Arabic immediately to prevent any overlap
+          playOverlayEnglish(i);
+          return;
+        }
+      }
+
+      function playOverlayEnglish(verseIndex) {
+        var verse = overlayVerseData[verseIndex];
+        var englishUrl;
+
+        if (verse.is_bismillah) {
+          englishUrl = getEnglishBismillahUrl(currentSurah);
+        } else {
+          englishUrl = getEnglishAudioUrl(verse.verse_key);
+        }
+
+        if (!englishUrl) {
+          // No English audio for this verse, resume gapless
+          log('No English audio for ' + (verse.is_bismillah ? 'Bismillah' : verse.verse_key) + ', resuming Arabic');
+          activeAudio.play().catch(function() {});
+          return;
+        }
+
+        overlayEnglishPlaying = true;
+        var label = verse.is_bismillah ? 'Bismillah' : 'Verse ' + verse.verse_key;
+        log('Playing overlay English: ' + label);
+
+        // Restore English volume (was muted after previous clip ended)
+        audioB.volume = 1;
+
+        // Check if already preloaded
+        if (audioB.src && audioB.src.indexOf(englishUrl.split('/').pop()) !== -1) {
+          // Already preloaded — just play
+          applySpeed();
+          audioB.play().then(function() {
+            setStatus('English: ' + label, true);
+          }).catch(function() {
+            overlayEnglishPlaying = false;
+            activeAudio.play().catch(function() {});
+          });
+        } else {
+          // Need to load
+          audioB.src = englishUrl;
+          audioB.load();
+          applySpeed();
+          audioB.play().then(function() {
+            setStatus('English: ' + label, true);
+          }).catch(function() {
+            overlayEnglishPlaying = false;
+            activeAudio.play().catch(function() {});
+          });
+        }
+
+        // When English ends, resume gapless Arabic
+        audioB.removeEventListener('ended', onOverlayEnglishEnded);
+        audioB.addEventListener('ended', onOverlayEnglishEnded);
+      }
+
+      function onOverlayEnglishEnded() {
+        audioB.removeEventListener('ended', onOverlayEnglishEnded);
+        overlayEnglishPlaying = false;
+
+        // Silence English immediately to prevent any tail overlap
+        audioB.pause();
+        audioB.volume = 0;
+
+        if (!englishOverlayActive) {
+          activeAudio.volume = 1;
+          return;
+        }
+
+        log('Overlay English ended, resuming gapless Arabic (next verse index: ' + overlayCurrentVerse + ')');
+
+        // Restore Arabic volume and resume
+        activeAudio.volume = 1;
+        activeAudio.play().then(function() {
+          setStatus('');
+          // Preload English for the next verse after Arabic resumes
+          if (overlayCurrentVerse < overlayVerseData.length) {
+            preloadOverlayEnglish(overlayCurrentVerse);
+          }
+        }).catch(function() {
+          setStatus('Press Play to continue');
+        });
+      }
+
+      // ===== ENDED EVENT HANDLER =====
+      // This handler is REMOVED before changing audio source and RE-ADDED after
+      // the new source is loaded and playing. This prevents ALL stale events.
+      function onAudioEnded(e) {
+        // Only process if this is from the active audio element
+        if (e && e.target !== activeAudio) {
+          log('Ignoring ended event from inactive audio');
+          return;
+        }
+
+        log('ENDED: verseByVerseMode=' + verseByVerseMode + ', playingEnglish=' + playingEnglish + ', isBismillah=' + isBismillah + ', surah=' + currentSurah);
+
+        // Immediately remove the handler to prevent any duplicate processing
+        removeEndedHandler();
+
+        // === VERSE-BY-VERSE MODE WITH ENGLISH TRANSLATION ===
+        if (verseByVerseMode) {
+          if (playingEnglish) {
+            // English just finished - move to next verse
+            log('English finished, moving to next verse');
+            currentVerseIndex++;
+            playCurrentVerse();
+          } else {
+            // Arabic just finished - check if English is still enabled
+            if (englishTranslationCheckbox && englishTranslationCheckbox.checked) {
+              log('Arabic finished, playing English translation');
+              playEnglishForCurrentVerse();
+            } else {
+              // User unchecked the box - skip English, go to next verse
+              log('Arabic finished, English disabled - skipping to next verse');
+              currentVerseIndex++;
+              playCurrentVerse();
+            }
+          }
+          return;
+        }
+
+        // === GAPLESS MODE (existing logic) ===
+        // Was this Bismillah ending?
+        if (isBismillah && pendingSurahUrl) {
+          log('Bismillah finished, now playing surah ' + currentSurah);
+          var surahUrl = pendingSurahUrl;
+          pendingSurahUrl = null;
+          isBismillah = false;
+
+          // Load and play the surah
+          changingSource = true;
+          audioLoadedOk = false;
+          activeAudio.src = surahUrl;
+          activeAudio.load();
+          applySpeed();
+
+          // Re-attach ended handler AFTER a short delay to let browser settle
+          activeAudio.play().then(function() {
+            changingSource = false;
+            log('Surah ' + currentSurah + ' playing');
+            setTimeout(attachEndedHandler, 200);
+          }).catch(function(e) {
+            changingSource = false;
+            log('Surah play failed: ' + e.message);
+            setTimeout(attachEndedHandler, 200);
+          });
+          return;
+        }
+
+        // If English overlay is active, play English for the last verse before advancing
+        if (englishOverlayActive && overlayVerseData.length > 0) {
+          var lastIdx = overlayVerseData.length - 1;
+          if (lastIdx > overlayCurrentVerse) {
+            overlayCurrentVerse = lastIdx;
+            log('Surah ended - playing overlay English for last verse before advancing');
+            // Play English for last verse, then let normal surah-end logic run
+            var origEnded = onOverlayEnglishEnded;
+            audioB.removeEventListener('ended', onOverlayEnglishEnded);
+            var surahEndHandler = function() {
+              audioB.removeEventListener('ended', surahEndHandler);
+              overlayEnglishPlaying = false;
+              englishOverlayActive = false;
+              overlayVerseData = [];
+              overlayCurrentVerse = -1;
+              // Now handle surah end (auto-advance or stop)
+              if (autoAdvanceCheckbox && autoAdvanceCheckbox.checked && currentSurah < 114) {
+                var nextSurah = currentSurah + 1;
+                log('Auto-advancing to surah ' + nextSurah + ' (after last English)');
+                setTimeout(function() { loadSurahWithMode(nextSurah, currentReciter, true); }, 200);
+              } else {
+                setStatus('Surah complete');
+                setTimeout(attachEndedHandler, 200);
+              }
+            };
+            audioB.addEventListener('ended', surahEndHandler);
+            playOverlayEnglish(lastIdx);
+            return;
+          }
+        }
+
+        // Surah finished - check for auto-advance
+        log('Surah ' + currentSurah + ' finished completely');
+        log('AUTO-ADVANCE CHECK: checkbox=' + !!autoAdvanceCheckbox + ', checked=' + (autoAdvanceCheckbox ? autoAdvanceCheckbox.checked : 'N/A') + ', currentSurah=' + currentSurah + ', currentReciter=' + currentReciter);
+
+        if (autoAdvanceCheckbox && autoAdvanceCheckbox.checked && currentSurah < 114) {
+          var nextSurah = currentSurah + 1;
+          log('Auto-advancing to surah ' + nextSurah);
+          setStatus('Loading next surah...');
+          // Use setTimeout to ensure clean state before loading next
+          setTimeout(function() {
+            log('Auto-advance timeout fired: loading surah ' + nextSurah + ' with reciter ' + currentReciter);
+            loadSurahWithMode(nextSurah, currentReciter, true);
+          }, 200);
+        } else {
+          log('NOT auto-advancing: checkbox=' + (autoAdvanceCheckbox ? autoAdvanceCheckbox.checked : 'null') + ', surah=' + currentSurah);
+          setStatus('Surah complete');
+          // Re-attach handler for future playback
+          setTimeout(attachEndedHandler, 200);
+        }
+      }
+
+      function attachEndedHandler() {
+        if (!endedHandlerAttached) {
+          // Attach to BOTH audio elements since either could be active
+          audioA.addEventListener('ended', onAudioEnded);
+          audioB.addEventListener('ended', onAudioEnded);
+          endedHandlerAttached = true;
+          log('Ended handler ATTACHED to both audio elements');
+        }
+      }
+
+      function removeEndedHandler() {
+        if (endedHandlerAttached) {
+          audioA.removeEventListener('ended', onAudioEnded);
+          audioB.removeEventListener('ended', onAudioEnded);
+          endedHandlerAttached = false;
+          log('Ended handler REMOVED from both audio elements');
+        }
+      }
+
+      // ===== CORE: LOAD SURAH =====
+      function loadSurah(surahNum, reciterId, autoPlay, seekToTime) {
+        surahNum = parseInt(surahNum, 10);
+        reciterId = parseInt(reciterId, 10);
+
+        if (!reciterId || isNaN(reciterId)) {
+          setStatus('Please select a reciter');
+          return;
+        }
+
+        if (surahNum < 1 || surahNum > 114) {
+          setStatus('Invalid surah number');
+          return;
+        }
+
+        if (isLoading) {
+          log('Already loading, ignoring request');
+          return;
+        }
+
+        log('loadSurah(' + surahNum + ', reciter=' + reciterId + ', autoPlay=' + autoPlay + ')');
+
+        // Snapshot the old state so a fetch failure can restore it. Previously
+        // we wiped audio src up front; if the API call then failed (e.g. a
+        // transient auto-advance to the next surah), both elements had empty
+        // src and NaN duration, leaving every seek path a silent no-op.
+        var prevSurah = currentSurah;
+        var prevReciter = currentReciter;
+        var prevBismillahUrl = cachedBismillahUrl;
+        var prevSurahUrl = cachedSurahUrl;
+        var prevDropdownValue = surahSelect ? surahSelect.value : '';
+
+        // CRITICAL: Remove ended handler BEFORE changing audio source
+        changingSource = true;  // Suppress error events during source changes
+        removeEndedHandler();
+
+        // Pause but do NOT wipe src/currentTime yet. We want the old audio to
+        // stay scrubbable if the upcoming fetch fails.
+        audioA.pause();
+        audioB.pause();
+        nextAudioReady = false;
+        nextAudioUrl = null;
+
+        // Update state
+        isLoading = true;
+        currentSurah = surahNum;
+        currentReciter = reciterId;
+        pendingSurahUrl = null;
+        isBismillah = false;
+
+        // Chapter (gapless) mode plays a single audio file; we don't have
+        // verse-level timings here, so the best we can publish for the
+        // bookmark button is "the user is at verse 1 of this surah."
+        // Verse-by-verse mode overwrites this with the actual current verse
+        // each time playCurrentVerse() runs.
+        window.gablvmCurrentSurahVerse = { surah: surahNum, verse: 1 };
+
+        // Clear any active English overlay
+        if (englishOverlayActive) {
+          englishOverlayActive = false;
+          overlayEnglishPlaying = false;
+          overlayVerseData = [];
+          overlayCurrentVerse = -1;
+          audioB.removeEventListener('ended', onOverlayEnglishEnded);
+        }
+
+        // Sync dropdown
+        if (surahSelect.value !== String(surahNum)) {
+          surahSelect.value = String(surahNum);
+        }
+
+        updateSurahName();
+        setStatus('Loading...');
+
+        // Fetch from API
+        fetch('/api/quran/audio/' + surahNum + '/' + reciterId)
+          .then(function(resp) {
+            if (!resp.ok) throw new Error('HTTP ' + resp.status);
+            return resp.json();
+          })
+          .then(function(data) {
+            isLoading = false;
+            log('API response for surah ' + surahNum + ': needsBismillah=' + data.needsBismillah);
+
+            if (!data.success || !data.audioUrl) {
+              changingSource = false;
+              setStatus('Audio not available');
+              attachEndedHandler();
+              return;
+            }
+
+            setStatus('');
+
+            // New URL confirmed — now it's safe to wipe the old audio and
+            // rebind the A/B pointers to a clean default. Doing this only
+            // after success means a failed fetch never leaves the player
+            // dead.
+            audioA.currentTime = 0;
+            audioB.currentTime = 0;
+            audioA.src = '';
+            audioB.src = '';
+            activeAudio = audioA;
+            inactiveAudio = audioB;
+            cachedBismillahUrl = null;
+            cachedSurahUrl = null;
+
+            // Determine what to load
+            audioLoadedOk = false;
+
+            // If resuming from a specific position, skip Bismillah and go straight to surah audio
+            if (seekToTime && seekToTime > 0) {
+              pendingSurahUrl = null;
+              isBismillah = false;
+              cachedBismillahUrl = null;
+              cachedSurahUrl = data.audioUrl;
+              activeAudio.src = data.audioUrl;
+              log('Loading surah ' + surahNum + ' with seek to ' + seekToTime.toFixed(1) + 's (skipping Bismillah)');
+            } else if (data.needsBismillah && data.bismillahAudioUrl) {
+              // Need to play Bismillah first
+              pendingSurahUrl = data.audioUrl;
+              isBismillah = true;
+              cachedBismillahUrl = data.bismillahAudioUrl;
+              cachedSurahUrl = data.audioUrl;
+              activeAudio.src = data.bismillahAudioUrl;
+              // Warm the surah into the inactive element while Bismillah plays
+              // so the ended-handoff serves from cache instead of a cold fetch.
+              inactiveAudio.src = data.audioUrl;
+              inactiveAudio.load();
+              log('Loading Bismillah for surah ' + surahNum + ' (preloading surah)');
+            } else {
+              // Play surah directly (Surah 1 or Surah 9, or embedded Bismillah)
+              pendingSurahUrl = null;
+              isBismillah = false;
+              cachedBismillahUrl = null;
+              cachedSurahUrl = data.audioUrl;
+              activeAudio.src = data.audioUrl;
+              log('Loading surah ' + surahNum + ' directly (no Bismillah)');
+            }
+
+            activeAudio.load();
+            applySpeed();
+
+            // Seek to the target position once audio is ready
+            if (seekToTime && seekToTime > 0) {
+              var pendingSeek = seekToTime;
+              var seekHandler = function() {
+                activeAudio.removeEventListener('loadedmetadata', seekHandler);
+                if (pendingSeek < activeAudio.duration) {
+                  activeAudio.currentTime = pendingSeek;
+                  log('Seeked to ' + pendingSeek.toFixed(1) + 's (duration=' + activeAudio.duration.toFixed(1) + 's)');
+                }
+              };
+              activeAudio.addEventListener('loadedmetadata', seekHandler);
+            }
+
+            if (autoPlay) {
+              log('AUTO-PLAY: Attempting play() for surah ' + surahNum + ' (src=' + activeAudio.src.substring(activeAudio.src.lastIndexOf('/') + 1) + ')');
+              activeAudio.play().then(function() {
+                changingSource = false;
+                log('AUTO-PLAY SUCCESS: Playback started for ' + (isBismillah ? 'Bismillah' : 'Surah ' + surahNum));
+                // Attach ended handler AFTER playback starts
+                setTimeout(attachEndedHandler, 200);
+              }).catch(function(e) {
+                changingSource = false;
+                log('AUTO-PLAY BLOCKED: ' + e.name + ': ' + e.message);
+                setStatus('Press Play to continue');
+                // Move focus to play button for VoiceOver users
+                if (playPauseBtn) playPauseBtn.focus();
+                setTimeout(attachEndedHandler, 200);
+              });
+            } else {
+              changingSource = false;
+              setStatus('Ready - press Play');
+              // Move focus to play button for VoiceOver users after dropdown selection
+              if (playPauseBtn) playPauseBtn.focus();
+              // Attach ended handler after loading
+              setTimeout(attachEndedHandler, 200);
+            }
+          })
+          .catch(function(err) {
+            isLoading = false;
+            changingSource = false;
+            log('Fetch error: ' + err.message);
+            // Roll back the state we mutated at the top of loadSurah so the
+            // player stays on the surah that is actually loaded (the old
+            // one). Without this, currentSurah would point at a surah whose
+            // audio was never set, and the dropdown would disagree with
+            // what's still in the audio element.
+            currentSurah = prevSurah;
+            currentReciter = prevReciter;
+            cachedBismillahUrl = prevBismillahUrl;
+            cachedSurahUrl = prevSurahUrl;
+            if (surahSelect && prevDropdownValue && surahSelect.value !== prevDropdownValue) {
+              surahSelect.value = prevDropdownValue;
+            }
+            updateSurahName();
+            setStatus('Error loading audio. Press Play to retry.');
+            attachEndedHandler();
+          });
+      }
+
+      // ===== MODE WRAPPER =====
+      // Chooses between verse-by-verse (with English) or gapless mode
+      function loadSurahWithMode(surahNum, reciterId, autoPlay) {
+        if (englishTranslationCheckbox && englishTranslationCheckbox.checked) {
+          // Use verse-by-verse: each Arabic verse file plays to natural completion
+          // before English kicks in — no timing-based boundary detection needed.
+          loadSurahVerseByVerse(surahNum, reciterId, autoPlay);
+        } else {
+          loadSurah(surahNum, reciterId, autoPlay);
+        }
+      }
+
+      // ===== OTHER EVENT LISTENERS =====
+      // Note: timeupdate, playing, pause, canplaythrough, and error listeners
+      // are now set up via setupAudioListeners() for both audio elements
+
+      // Play/Pause button
+      if (playPauseBtn) {
+        playPauseBtn.addEventListener('click', function() {
+          log('Play button clicked: verseByVerseMode=' + verseByVerseMode + ', versesPlaylist.length=' + versesPlaylist.length + ', isLoading=' + isLoading);
+
+          // If we're in verse-by-verse mode but still loading verses, show message
+          if (verseByVerseMode && versesPlaylist.length === 0) {
+            if (isLoading) {
+              setStatus('Loading verses, please wait...');
+            } else {
+              // Verses failed to load or not started - try loading again
+              if (currentSurah && currentReciter) {
+                loadSurahVerseByVerse(currentSurah, currentReciter, true);
+              } else {
+                setStatus('Please select a reciter first');
+              }
+            }
+            return;
+          }
+
+          // In verse-by-verse mode with playlist ready
+          if (verseByVerseMode && versesPlaylist.length > 0) {
+            log('Verse-by-verse mode: activeAudio.paused=' + activeAudio.paused + ', activeAudio.src=' + activeAudio.src + ', activeAudio.currentTime=' + activeAudio.currentTime);
+
+            if (activeAudio.paused) {
+              // Check if we have audio that's partially played (can resume)
+              var canResume = activeAudio.src && activeAudio.src.indexOf('.mp3') !== -1 && activeAudio.currentTime > 0 && !activeAudio.ended;
+
+              if (canResume) {
+                // Resume from where we paused
+                log('Resuming playback from ' + activeAudio.currentTime);
+                activeAudio.play().catch(function(e) {
+                  log('Resume failed: ' + e.message);
+                  playCurrentVerse();
+                });
+              } else {
+                // Start fresh from current verse
+                log('Starting playback from verse ' + currentVerseIndex);
+                playCurrentVerse();
+              }
+            } else {
+              // Playing, so pause
+              activeAudio.pause();
+            }
+            return;
+          }
+
+          // English overlay mode: pause/resume the English audio on audioB
+          if (englishOverlayActive && overlayEnglishPlaying) {
+            if (audioB.paused) {
+              audioB.play().catch(function() {});
+            } else {
+              audioB.pause();
+            }
+            return;
+          }
+
+          // Gapless mode
+          if (!activeAudio.src || activeAudio.src === '') {
+            setStatus('Please load a surah first');
+            return;
+          }
+          if (activeAudio.paused) {
+            activeAudio.play().catch(function(e) {
+              log('Play blocked: ' + e.message);
+            });
+          } else {
+            activeAudio.pause();
+          }
+        });
+      }
+
+      // Media Session API — wire VoiceOver magic tap (two-finger double-tap)
+      // and OS-level media controls (lock screen, AirPods, headphones) so they
+      // route through ONE play/pause path. Without this, iOS Safari fires both
+      // its default media-element toggle AND the synthetic click on our
+      // focused play/pause button, leading to "pause then immediately resume."
+      // Setting Media Session action handlers tells iOS we own play/pause and
+      // suppresses the duplicate default behavior.
+      if ('mediaSession' in navigator) {
+        try {
+          navigator.mediaSession.setActionHandler('play', function() {
+            // Defer to the same logic the click handler uses by clicking it.
+            // Single source of truth means verse-by-verse + English overlay
+            // + gapless modes all keep behaving correctly.
+            if (playPauseBtn) playPauseBtn.click();
+          });
+          navigator.mediaSession.setActionHandler('pause', function() {
+            if (playPauseBtn) playPauseBtn.click();
+          });
+        } catch (e) {
+          // Older browsers may not support every action; failure is harmless.
+        }
+      }
+
+      // Load button
+      if (loadBtn) {
+        loadBtn.addEventListener('click', function() {
+          loadSurahWithMode(surahSelect.value, reciterSelect.value, false);
+        });
+      }
+
+      // Surah selection change - auto-load if reciter selected
+      surahSelect.addEventListener('change', function() {
+        if (isLoading) return;
+        var reciter = reciterSelect.value;
+        if (reciter) {
+          loadSurahWithMode(surahSelect.value, reciter, false);
+        }
+      });
+
+      // Reciter selection change - auto-load
+      reciterSelect.addEventListener('change', function() {
+        // Update English checkbox state based on reciter compatibility
+        updateEnglishCheckboxState();
+
+        if (isLoading) return;
+        var surah = surahSelect.value;
+        var reciter = reciterSelect.value;
+        if (reciter && surah) {
+          loadSurahWithMode(surah, reciter, false);
+        }
+      });
+
+      // Previous Surah button (deferred since HTML is below script)
+      document.addEventListener('DOMContentLoaded', function() {
+        var _prevBtn = document.getElementById('prev-surah-btn');
+        if (_prevBtn) _prevBtn.addEventListener('click', goToPrevSurah);
+      });
+
+      // Next Surah button (deferred since HTML is below script)
+      document.addEventListener('DOMContentLoaded', function() {
+        var _nextBtn = document.getElementById('next-surah-btn');
+        if (_nextBtn) _nextBtn.addEventListener('click', goToNextSurah);
+      });
+
+      // Seek functions - enhanced for verse-by-verse mode
+      function seekBy(seconds) {
+        if (!activeAudio.duration || isNaN(activeAudio.duration)) {
+          // Audio isn't ready (failed load, empty src, etc.). Surface it
+          // instead of silently eating the keypress — blind users otherwise
+          // have no feedback that the button did nothing.
+          log('seekBy ignored: no audio duration (src="' + activeAudio.src + '")');
+          setStatus('Audio not loaded. Press Load Surah or pick a reciter.');
+          return;
+        }
+
+        var newTime = activeAudio.currentTime + seconds;
+
+        // In verse-by-verse mode, handle seeking across verses
+        if (verseByVerseMode && versesPlaylist.length > 0) {
+          if (seconds < 0 && newTime < 0) {
+            // Seeking backward past the start of current audio
+            log('Seek back past start in verse-by-verse mode');
+
+            if (playingEnglish) {
+              // Currently on English, go back to Arabic of same verse
+              log('Going back to Arabic of current verse');
+              playingEnglish = false;
+              playCurrentVerse();
+              return;
+            } else {
+              // Currently on Arabic, go back to previous verse
+              if (currentVerseIndex > 0) {
+                currentVerseIndex--;
+                var englishEnabled = englishTranslationCheckbox && englishTranslationCheckbox.checked;
+                if (englishEnabled) {
+                  // Go to English of previous verse
+                  log('Going back to English of previous verse (index ' + currentVerseIndex + ')');
+                  playEnglishForCurrentVerse();
+                } else {
+                  // Go to Arabic of previous verse
+                  log('Going back to Arabic of previous verse (index ' + currentVerseIndex + ')');
+                  playCurrentVerse();
+                }
+                return;
+              } else {
+                // Already at first verse, just go to start
+                activeAudio.currentTime = 0;
+                updateTimeDisplay();
+                return;
+              }
+            }
+          } else if (seconds > 0 && newTime > activeAudio.duration) {
+            // Seeking forward past the end of current audio - trigger ended behavior
+            log('Seek forward past end in verse-by-verse mode - advancing');
+            if (playingEnglish) {
+              currentVerseIndex++;
+              playCurrentVerse();
+            } else {
+              var englishEnabled = englishTranslationCheckbox && englishTranslationCheckbox.checked;
+              if (englishEnabled) {
+                playEnglishForCurrentVerse();
+              } else {
+                currentVerseIndex++;
+                playCurrentVerse();
+              }
+            }
+            return;
+          }
+        }
+
+        // Normal seek within current audio
+        // If seeking to or past the start and this surah has Bismillah, replay from Bismillah
+        if (newTime <= 0 && !verseByVerseMode && !isBismillah && cachedBismillahUrl && cachedSurahUrl) {
+          log('Seek to start: replaying from Bismillah');
+          removeEndedHandler();
+          changingSource = true;
+          pendingSurahUrl = cachedSurahUrl;
+          isBismillah = true;
+          activeAudio.src = cachedBismillahUrl;
+          activeAudio.load();
+          applySpeed();
+          activeAudio.play().then(function() {
+            changingSource = false;
+            setTimeout(attachEndedHandler, 200);
+          }).catch(function(e) {
+            changingSource = false;
+            setTimeout(attachEndedHandler, 200);
+          });
+          updateTimeDisplay();
+          return;
+        }
+        activeAudio.currentTime = Math.max(0, Math.min(activeAudio.duration, newTime));
+        updateTimeDisplay();
+      }
+
+      if (rewind30Btn) rewind30Btn.addEventListener('click', function() { seekBy(-30); });
+      if (rewind10Btn) rewind10Btn.addEventListener('click', function() { seekBy(-10); });
+      if (forward10Btn) forward10Btn.addEventListener('click', function() { seekBy(10); });
+      if (forward30Btn) forward30Btn.addEventListener('click', function() { seekBy(30); });
+
+      // Mute button
+      var muteBtn = document.getElementById('mute-btn');
+      var muteBtnText = document.getElementById('mute-btn-text');
+      if (muteBtn) {
+        muteBtn.addEventListener('click', function() {
+          activeAudio.muted = !activeAudio.muted;
+          audioA.muted = activeAudio.muted;
+          audioB.muted = activeAudio.muted;
+          var label = activeAudio.muted ? 'Unmute' : 'Mute';
+          if (muteBtnText) muteBtnText.textContent = label;
+          muteBtn.setAttribute('aria-label', label);
+          setStatus(activeAudio.muted ? 'Muted' : 'Unmuted');
+          log('Mute: ' + activeAudio.muted);
+        });
+      }
+
+      // Speed control
+      if (speedSelect) {
+        speedSelect.addEventListener('change', applySpeed);
+      }
+
+      // Checkboxes deferred until DOM is ready since their HTML comes after this script
+      document.addEventListener('DOMContentLoaded', function() {
+        autoAdvanceCheckbox = document.getElementById('auto-advance');
+        log('Auto-advance checkbox element: ' + (autoAdvanceCheckbox ? 'FOUND' : 'NOT FOUND'));
+
+        englishTranslationCheckbox = document.getElementById('english-translation-audio');
+        log('English checkbox element: ' + (englishTranslationCheckbox ? 'FOUND' : 'NOT FOUND'));
+        if (!englishTranslationCheckbox) return;
+        updateEnglishCheckboxState();
+        englishTranslationCheckbox.addEventListener('change', function() {
+          log('English checkbox changed: checked=' + this.checked + ', currentSurah=' + currentSurah + ', currentReciter=' + currentReciter + ', verseByVerseMode=' + verseByVerseMode);
+          // Check reciter compatibility first
+          var reciterId = reciterSelect ? reciterSelect.value : '';
+          log('Reciter ID from dropdown: "' + reciterId + '", supportsVBV=' + reciterSupportsVersbyVerse(reciterId));
+          if (this.checked && reciterId && !reciterSupportsVersbyVerse(reciterId)) {
+            // Reciter doesn't support verse-by-verse mode - show warning and uncheck
+            this.checked = false;
+            var msg = 'The selected reciter does not support verse-by-verse playback, which is required for English audio translation. ' +
+                      'Please select one of these reciters: Abdul Basit, Abdur-Rahman as-Sudais, Abu Bakr al-Shatri, ' +
+                      'Hani ar-Rifai, Mahmoud Khalil Al-Husary, Mishari Rashid al-Afasy, Muhammad Siddiq al-Minshawi, or Saud ash-Shuraym.';
+            setStatus(msg);
+            // Also announce to screen readers
+            var announcement = document.createElement('div');
+            announcement.setAttribute('role', 'alert');
+            announcement.setAttribute('aria-live', 'assertive');
+            announcement.className = 'visually-hidden';
+            announcement.textContent = msg;
+            document.body.appendChild(announcement);
+            setTimeout(function() { document.body.removeChild(announcement); }, 5000);
+            return;
+          }
+
+          // Only switch if we have a surah loaded and a reciter selected
+          if (!currentSurah || !currentReciter) {
+            if (this.checked) {
+              setStatus('Please select a reciter and load a surah first');
+            }
+            return;
+          }
+
+          if (this.checked) {
+            if (verseByVerseMode) {
+              // Already in verse-by-verse mode — English just works
+              log('English re-enabled in verse-by-verse mode');
+              // If paused, start playing so user hears something
+              if (activeAudio.paused && versesPlaylist.length > 0) {
+                playCurrentVerse();
+              }
+              return;
+            }
+            // Switch from gapless to verse-by-verse mode.
+            // Each individual verse audio file plays to natural completion (via ended event)
+            // so the reciter always finishes before English kicks in — no timing guesswork.
+            var currentTime = activeAudio.currentTime || 0;
+            var wasPlaying = !activeAudio.paused;
+            log('English enabled - switching to verse-by-verse (gapless position=' + currentTime.toFixed(1) + 's)');
+            setStatus('Loading English translation...');
+            // Always auto-play when English is checked — user intent is to hear audio.
+            loadSurahVerseByVerse(currentSurah, currentReciter, true, wasPlaying ? currentTime : 0);
+          } else {
+            if (verseByVerseMode) {
+              // Switch back to gapless mode, seeking to approximate position
+              var wasPlaying = !activeAudio.paused;
+              var seekTo = 0;
+              if (versesPlaylist.length > 0 && currentVerseIndex < versesPlaylist.length) {
+                var currentVerse = versesPlaylist[currentVerseIndex];
+                if (currentVerse.timing && currentVerse.timing.start > 0) {
+                  seekTo = currentVerse.timing.start / 1000;
+                }
+              }
+              log('English disabled - switching to gapless (seek=' + seekTo.toFixed(1) + 's)');
+              verseByVerseMode = false;
+              versesPlaylist = [];
+              currentVerseIndex = 0;
+              playingEnglish = false;
+              loadSurah(currentSurah, currentReciter, wasPlaying, seekTo);
+            }
+            // Also stop overlay if it was active
+            if (englishOverlayActive) {
+              stopEnglishOverlay();
+            }
+          }
+        });
+      }); // end DOMContentLoaded for English checkbox
+
+      // ===== KEYBOARD SHORTCUTS =====
+      // Global shortcuts using letter keys (YouTube-style J/K/L convention).
+      // These work anywhere on the page except inside text inputs.
+      // Press ? to show the shortcuts help dialog.
+
+      var shortcutsHelpVisible = false;
+
+      function togglePlayPause() {
+        if (englishOverlayActive && overlayEnglishPlaying) {
+          if (audioB.paused) { audioB.play().catch(function() {}); }
+          else { audioB.pause(); }
+        } else if (activeAudio.paused) {
+          activeAudio.play().catch(function() {});
+        } else {
+          activeAudio.pause();
+        }
+        updatePlayPauseButton();
+      }
+
+      function changeSpeed(delta) {
+        var _speedSelect = speedSelect || document.getElementById('speed-select');
+        if (!_speedSelect) return;
+        var options = Array.from(_speedSelect.options);
+        var currentIndex = _speedSelect.selectedIndex;
+        var newIndex = currentIndex + delta;
+        if (newIndex >= 0 && newIndex < options.length) {
+          _speedSelect.selectedIndex = newIndex;
+          applySpeed();
+          setStatus('Speed: ' + _speedSelect.value + 'x');
+          log('Speed changed to ' + _speedSelect.value + 'x');
+        }
+      }
+
+      function showShortcutsHelp() {
+        if (window._quranShortcutsDialog) {
+          window._quranShortcutsDialog.toggle();
+          shortcutsHelpVisible = window._quranShortcutsDialog.isOpen();
+        }
+      }
+
+      document.addEventListener('keydown', function(e) {
+        // Skip if user is typing in a text input or textarea
+        var tag = e.target.tagName;
+        if (tag === 'INPUT' && e.target.type === 'text' || tag === 'TEXTAREA') {
+          return;
+        }
+
+        // Skip if modifier keys are held (allow browser shortcuts)
+        if (e.ctrlKey || e.metaKey || e.altKey) {
+          return;
+        }
+
+        var handled = true;
+
+        switch (e.key) {
+          case 'k':
+          case 'K':
+            // Play / Pause
+            togglePlayPause();
+            break;
+
+          case ' ':
+            // Space: Play / Pause (only if not on a button/select)
+            if (tag === 'BUTTON' || tag === 'SELECT') { handled = false; break; }
+            togglePlayPause();
+            break;
+
+          case 'j':
+          case 'J':
+            // J: Rewind 10s, Shift+J: Rewind 30s
+            seekBy(e.shiftKey ? -30 : -10);
+            setStatus(e.shiftKey ? 'Rewound 30 seconds' : 'Rewound 10 seconds', true);
+            break;
+
+          case 'l':
+          case 'L':
+            // L: Forward 10s, Shift+L: Forward 30s
+            seekBy(e.shiftKey ? 30 : 10);
+            setStatus(e.shiftKey ? 'Skipped forward 30 seconds' : 'Skipped forward 10 seconds', true);
+            break;
+
+          case 'ArrowLeft':
+            // Left arrow: Rewind 5s
+            if (tag === 'SELECT') { handled = false; break; }
+            seekBy(-5);
+            break;
+
+          case 'ArrowRight':
+            // Right arrow: Forward 5s
+            if (tag === 'SELECT') { handled = false; break; }
+            seekBy(5);
+            break;
+
+          case 'n':
+          case 'N':
+            // Next surah
+            goToNextSurah();
+            break;
+
+          case 'p':
+          case 'P':
+            // Previous surah
+            goToPrevSurah();
+            break;
+
+          case '=':
+          case '+':
+            // Speed up (resolve at runtime since select is below script)
+            changeSpeed(1);
+            break;
+
+          case '-':
+          case '_':
+            // Speed down
+            changeSpeed(-1);
+            break;
+
+          case 'm':
+          case 'M':
+            // Mute / Unmute
+            activeAudio.muted = !activeAudio.muted;
+            audioA.muted = activeAudio.muted;
+            audioB.muted = activeAudio.muted;
+            var _muteBtn = document.getElementById('mute-btn');
+            var _muteTxt = document.getElementById('mute-btn-text');
+            var _muteLabel = activeAudio.muted ? 'Unmute' : 'Mute';
+            if (_muteTxt) _muteTxt.textContent = _muteLabel;
+            if (_muteBtn) _muteBtn.setAttribute('aria-label', _muteLabel);
+            setStatus(activeAudio.muted ? 'Muted' : 'Unmuted');
+            log('Mute: ' + activeAudio.muted);
+            break;
+
+          case '?':
+            // Show shortcuts help
+            showShortcutsHelp();
+            break;
+
+          case 'Escape':
+            // Close shortcuts help
+            if (window._quranShortcutsDialog && window._quranShortcutsDialog.isOpen()) {
+              window._quranShortcutsDialog.close();
+              shortcutsHelpVisible = false;
+            } else {
+              handled = false;
+            }
+            break;
+
+          default:
+            handled = false;
+        }
+
+        if (handled) {
+          e.preventDefault();
+        }
+      });
+
+      // ===== INITIALIZATION =====
+      log('Ready. Select a reciter to begin.');
+      log('State: currentSurah=' + currentSurah + ', currentReciter=' + currentReciter + ', verseByVerseMode=' + verseByVerseMode);
+      updatePlayPauseButton();
+      updateEnglishCheckboxState(); // Set initial checkbox state based on selected reciter
+
+      // Bookmark deep-link auto-load: if the controller pre-selected a
+      // reciter via ?reciter= and (optionally) ?english=1, the dropdown
+      // markup already has both states set. Wait for DOMContentLoaded
+      // before triggering the load — the englishTranslationCheckbox
+      // variable is assigned inside another DOMContentLoaded handler
+      // (line ~1791), and loadSurahWithMode reads .checked off it. Firing
+      // before DOMContentLoaded would route to chapter mode every time
+      // because englishTranslationCheckbox is still null.
+      document.addEventListener('DOMContentLoaded', function() {
+        if (!reciterSelect || !reciterSelect.value || !surahSelect || !surahSelect.value) return;
+        var sn = surahSelect.value;
+        var rn = reciterSelect.value;
+
+        // Chapter-mode bookmark deep-link: prefetch chapter timings, then
+        // call loadSurah() with seekToTime so it goes through the existing
+        // "skip Bismillah" branch (line ~1448). User hears verse N start
+        // immediately — no Bismillah preroll, no verse-1 preroll, no
+        // jarring mid-recitation jump.
+        var bookmarkTarget = window.gablvmQuranInitialVerseTarget;
+        var inEnglishMode = englishTranslationCheckbox && englishTranslationCheckbox.checked;
+        if (bookmarkTarget && bookmarkTarget.verse > 1 && !inEnglishMode) {
+          log('Bookmark deep-link (chapter mode): prefetching timings for verse ' + bookmarkTarget.verse);
+          fetch('/api/quran/chapter-timings/' + sn + '/' + rn, {
+            credentials: 'same-origin',
+            headers: { 'Accept': 'application/json' }
+          })
+            .then(function (r) { return r.ok ? r.json() : { timings: [] }; })
+            .then(function (j) {
+              var timings = (j && j.timings) || [];
+              var seekMs = 0;
+              for (var i = 0; i < timings.length; i++) {
+                if (timings[i].verse === bookmarkTarget.verse - 1) { seekMs = timings[i].cumulative_end_ms; break; }
+              }
+              var seekSec = seekMs / 1000;
+              if (seekSec < 0.1) {
+                log('Bookmark deep-link: timings missing target verse, falling back to normal load');
+                loadSurahWithMode(sn, rn, false);
+                return;
+              }
+              // Consume the target — direct seek supersedes the QF chapter-mode tracker's seek path.
+              window.gablvmQuranInitialVerseTarget = null;
+              log('Bookmark deep-link: loading surah ' + sn + ' reciter ' + rn + ' with seek to ' + seekSec.toFixed(1) + 's (skipping Bismillah and verse 1 preroll)');
+              loadSurah(sn, rn, false, seekSec);
+            })
+            .catch(function () {
+              log('Bookmark deep-link: timings fetch failed, falling back to normal load');
+              loadSurahWithMode(sn, rn, false);
+            });
+          return;
+        }
+
+        // Default path: no bookmark target, or target is verse 1, or
+        // verse-by-verse English mode (which has its own jump-by-verse-key
+        // logic in loadSurahVerseByVerse).
+        log('Bookmark deep-link: auto-loading surah ' + sn + ' reciter ' + rn);
+        loadSurahWithMode(sn, rn, false);
+      });
+
+    })();
+    </script>
+
+    {# Surah Navigation #}
+    <div class="quran-nav-buttons">
+      <button type="button" id="prev-surah-btn" class="quran-btn">
+        {{ 'Previous Surah'|t }}
+      </button>
+      <button type="button" id="next-surah-btn" class="quran-btn">
+        {{ 'Next Surah'|t }}
+      </button>
+    </div>
+  </section>
+
+  {# ===== PLAYBACK OPTIONS ===== #}
+  <section class="quran-section quran-options" aria-labelledby="options-heading">
+    <h2 id="options-heading" class="quran-section-heading">{{ 'Playback Options'|t }}</h2>
+
+    <div class="quran-options-row">
+      <div class="quran-form-group">
+        <label for="speed-select" class="quran-label">{{ 'Playback Speed'|t }}</label>
+        <select id="speed-select" class="quran-select">
+          <option value="0.5">0.5x</option>
+          <option value="0.75">0.75x</option>
+          <option value="1" selected>1x ({{ 'Normal'|t }})</option>
+          <option value="1.25">1.25x</option>
+          <option value="1.5">1.5x</option>
+          <option value="2">2x</option>
+        </select>
+      </div>
+
+      <div class="quran-checkbox-wrapper">
+        <label class="quran-checkbox-label">
+          <input type="checkbox" id="auto-advance" checked>
+          <span>{{ 'Auto-play next surah when finished'|t }}</span>
+        </label>
+      </div>
+
+      <div class="quran-checkbox-wrapper">
+        <label class="quran-checkbox-label">
+          <input type="checkbox" id="english-translation-audio"{% if english_on %} checked{% endif %}>
+          <span>{{ 'Play English audio translation after each verse'|t }}</span>
+        </label>
+      </div>
+    </div>
+  </section>
+
+  {# ===== VERSE DISPLAY ===== #}
+  {% if show_translation_text %}
+  <section class="quran-section quran-verse-section" aria-labelledby="verse-heading">
+    <h2 id="verse-heading" class="quran-section-heading">{{ 'Verse Display'|t }}</h2>
+
+    <div class="quran-form-row">
+      <div class="quran-form-group">
+        <label for="translation-select" class="quran-label">{{ 'Translation'|t }}</label>
+        <select id="translation-select" class="quran-select">
+          {% for id, name in translations %}
+          <option value="{{ id }}"{% if id == current_translation %} selected{% endif %}>{{ name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+    </div>
+
+    <div class="quran-verse-display" id="verse-display">
+      <p class="quran-verse-ref" id="verse-ref"></p>
+      <p class="quran-arabic" id="arabic-text" lang="ar" dir="rtl">بِسْمِ ٱللَّهِ ٱلرَّحْمَـٰنِ ٱلرَّحِيمِ</p>
+      <p class="quran-translation" id="translation-text">In the name of God, the Most Gracious, the Most Merciful</p>
+    </div>
+
+    {# Verse Navigation #}
+    <div class="quran-verse-nav">
+      <button type="button" id="prev-verse-btn" class="quran-btn">
+        {{ 'Previous Verse'|t }}
+      </button>
+      <span id="verse-counter" class="quran-verse-counter"></span>
+      <button type="button" id="next-verse-btn" class="quran-btn">
+        {{ 'Next Verse'|t }}
+      </button>
+    </div>
+  </section>
+  {% endif %}
+
+  {# ===== KEYBOARD SHORTCUTS HELP ===== #}
+  <div id="shortcuts-help-dialog" role="dialog" aria-label="{{ 'Keyboard shortcuts'|t }}" aria-modal="false" aria-hidden="true" tabindex="-1" style="display:none; background:#fff; border:2px solid #333; border-radius:8px; padding:1.5rem; margin:1rem 0; max-width:500px;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:1rem;">
+      <h3 style="margin:0; font-size:1.1rem;">{{ 'Keyboard Shortcuts'|t }}</h3>
+      <button type="button" id="shortcuts-close-btn" class="quran-btn" style="font-size:0.875rem; padding:4px 12px;" aria-label="{{ 'Close keyboard shortcuts'|t }}">{{ 'Close'|t }}</button>
+    </div>
+    <table style="width:100%; border-collapse:collapse;">
+      <thead>
+        <tr>
+          <th scope="col" style="text-align:left; padding:4px 8px; border-bottom:1px solid #ccc;">{{ 'Key'|t }}</th>
+          <th scope="col" style="text-align:left; padding:4px 8px; border-bottom:1px solid #ccc;">{{ 'Action'|t }}</th>
+        </tr>
+      </thead>
+      <tbody>
+        <tr><td style="padding:4px 8px; font-weight:600;">K</td><td style="padding:4px 8px;">{{ 'Play or Pause'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">J</td><td style="padding:4px 8px;">{{ 'Rewind 10 seconds'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">Shift + J</td><td style="padding:4px 8px;">{{ 'Rewind 30 seconds'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">L</td><td style="padding:4px 8px;">{{ 'Forward 10 seconds'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">Shift + L</td><td style="padding:4px 8px;">{{ 'Forward 30 seconds'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">N</td><td style="padding:4px 8px;">{{ 'Next surah'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">P</td><td style="padding:4px 8px;">{{ 'Previous surah'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">+ or =</td><td style="padding:4px 8px;">{{ 'Speed up'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">-</td><td style="padding:4px 8px;">{{ 'Speed down'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">M</td><td style="padding:4px 8px;">{{ 'Mute or Unmute'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">?</td><td style="padding:4px 8px;">{{ 'Open this shortcuts help'|t }}</td></tr>
+        <tr><td style="padding:4px 8px; font-weight:600;">Escape</td><td style="padding:4px 8px;">{{ 'Close this help'|t }}</td></tr>
+      </tbody>
+    </table>
+    <p style="margin:1rem 0 0 0; font-size:0.875rem; color:#595959;">{{ 'Shortcuts work anywhere on the page except inside text fields.'|t }}</p>
+  </div>
+  {# Polite, not assertive: a keyboard-shortcut announcer should not interrupt
+     active verse playback narration. Audit finding 2026-05-17. #}
+  <div id="shortcuts-live-region" class="visually-hidden" role="status" aria-live="polite" aria-atomic="true"></div>
+  <script>
+  (function() {
+    var dialog = document.getElementById('shortcuts-help-dialog');
+    var closeBtn = document.getElementById('shortcuts-close-btn');
+    var openBtn = document.getElementById('shortcuts-help-btn');
+    var liveRegion = document.getElementById('shortcuts-live-region');
+    var triggerElement = null;
+
+    function openDialog(trigger) {
+      triggerElement = trigger || document.activeElement;
+      dialog.style.display = 'block';
+      dialog.setAttribute('aria-hidden', 'false');
+      liveRegion.textContent = 'Keyboard shortcuts opened.';
+      dialog.focus();
+    }
+
+    function closeDialog() {
+      dialog.style.display = 'none';
+      dialog.setAttribute('aria-hidden', 'true');
+      liveRegion.textContent = 'Keyboard shortcuts closed.';
+      if (triggerElement && triggerElement.focus) {
+        triggerElement.focus();
+      }
+    }
+
+    function isOpen() {
+      return dialog.style.display !== 'none';
+    }
+
+    if (openBtn) {
+      openBtn.addEventListener('click', function() {
+        if (isOpen()) { closeDialog(); } else { openDialog(openBtn); }
+      });
+    }
+
+    if (closeBtn) {
+      closeBtn.addEventListener('click', function() {
+        closeDialog();
+      });
+    }
+
+    // Expose for the global keyboard handler
+    window._quranShortcutsDialog = {
+      toggle: function(trigger) { if (isOpen()) { closeDialog(); } else { openDialog(trigger); } },
+      close: closeDialog,
+      isOpen: isOpen
+    };
+  })();
+  </script>
+
+  {# ===== DEBUG PANEL ===== #}
+  <section class="quran-section" id="quran-debug-section" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <h2 class="quran-section-heading" style="margin:0;">Debug Log</h2>
+      <div>
+        <button type="button" id="debug-copy-btn" class="quran-btn" style="font-size:12px; padding:4px 10px;">Copy Log</button>
+        <button type="button" id="debug-clear-btn" class="quran-btn" style="font-size:12px; padding:4px 10px;">Clear</button>
+      </div>
+    </div>
+    {# Debug panel: replaced Matrix-green-on-dark-blue terminal styling with
+       brand parchment + gold-text + green border so when an admin lands on
+       this page with ?debug=1 they don't get visually assaulted. Audit
+       finding 2026-05-17. Only visible behind the ?debug=1 toggle. #}
+    <pre id="quran-debug-log" style="background:var(--gablvm-parchment-warm,#f5efe0); color:var(--gablvm-gold-text,#6e5119); border:1px solid var(--gablvm-parchment-border,#e8e2d1); font-family:monospace; font-size:11px; padding:12px; border-radius:6px; max-height:300px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;"></pre>
+  </section>
+
+  <div style="text-align:center; margin-top:8px;">
+    <button type="button" id="debug-toggle-btn" style="background:none; border:none; color:#888; font-size:11px; cursor:pointer; text-decoration:underline; display:none;">Show Debug Log</button>
+  </div>
+  <script>
+  if (window.location.search.indexOf('debug=1') !== -1) {
+    document.getElementById('debug-toggle-btn').style.display = '';
+  }
+  </script>
+
+</div>
+
+<script>
+(function() {
+  var debugSection = document.getElementById('quran-debug-section');
+  var debugToggle = document.getElementById('debug-toggle-btn');
+  var debugCopy = document.getElementById('debug-copy-btn');
+  var debugClear = document.getElementById('debug-clear-btn');
+
+  if (debugToggle) {
+    debugToggle.addEventListener('click', function() {
+      if (debugSection.style.display === 'none') {
+        debugSection.style.display = '';
+        debugToggle.textContent = 'Hide Debug Log';
+      } else {
+        debugSection.style.display = 'none';
+        debugToggle.textContent = 'Show Debug Log';
+      }
+    });
+  }
+  if (debugCopy) {
+    debugCopy.addEventListener('click', function() {
+      var el = document.getElementById('quran-debug-log');
+      var text = el ? el.textContent : '';
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function() {
+          debugCopy.textContent = 'Copied!';
+          setTimeout(function() { debugCopy.textContent = 'Copy Log'; }, 2000);
+        });
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        document.execCommand('copy');
+        document.body.removeChild(ta);
+        debugCopy.textContent = 'Copied!';
+        setTimeout(function() { debugCopy.textContent = 'Copy Log'; }, 2000);
+      }
+    });
+  }
+  if (debugClear) {
+    debugClear.addEventListener('click', function() {
+      var el = document.getElementById('quran-debug-log');
+      if (el) el.textContent = '';
+    });
+  }
+})();
+</script>

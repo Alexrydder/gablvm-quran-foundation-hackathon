@@ -1,0 +1,248 @@
+# Islamic Tools landing page - accessible to everyone
+gablvm_core.islamic_tools:
+  path: '/islamic-tools'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\IslamicToolsController::display'
+    _title: 'Islamic Tools'
+  requirements:
+    _access: 'TRUE'
+
+# Admin settings
+gablvm_core.settings:
+  path: '/admin/config/services/gablvm'
+  defaults:
+    _form: '\Drupal\gablvm_core\Form\SettingsForm'
+    _title: 'GABLVM Settings'
+  requirements:
+    _permission: 'administer gablvm settings'
+  options:
+    _admin_route: TRUE
+
+# Quran Player - accessible to everyone
+gablvm_core.quran_player:
+  path: '/quran-listen'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranPlayerController::display'
+    _title: 'Quran Player'
+  requirements:
+    _access: 'TRUE'
+
+# Quran Tafsir — scholarly commentary per verse (production)
+gablvm_core.quran_tafsir:
+  path: '/quran/tafsir'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranTafsirLabController::display'
+    _title: 'Quran Tafsir'
+  requirements:
+    _access: 'TRUE'
+
+# Tafsir Lab — legacy path, 301 redirects to /quran/tafsir.
+gablvm_core.quran_tafsir_lab:
+  path: '/quran/lab/tafsir'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranTafsirLabController::labRedirect'
+  requirements:
+    _access: 'TRUE'
+
+# Quran Foundation OAuth2 — start the authorization_code flow.
+# Open access: the controller redirects anonymous visitors to /user/login
+# first (with a destination chain that brings them back here), since the
+# tokens we get back are keyed to the Drupal user.
+gablvm_core.qf_login:
+  path: '/oauth/quran-foundation/login'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::login'
+    _title: 'Connect your Quran.com account'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+# Sign in with Quran.com — anonymous-accessible. Sets login intent; the
+# callback creates a Drupal user from the QF identity if no match exists.
+gablvm_core.qf_sign_in:
+  path: '/oauth/quran-foundation/sign-in'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::signIn'
+    _title: 'Sign in with Quran.com'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+# Quran Foundation OAuth2 redirect URI (registered with QF). Exchanges
+# the authorization code for access + refresh tokens and stores them
+# against the current Drupal user.
+gablvm_core.qf_oauth_callback:
+  path: '/oauth/quran-foundation/callback'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::callback'
+    _title: 'Signing in with Quran Foundation'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+# Quran Foundation OAuth2 — local disconnect (clears stored tokens).
+gablvm_core.qf_disconnect:
+  path: '/oauth/quran-foundation/disconnect'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::disconnect'
+    _title: 'Disconnect Quran.com'
+  requirements:
+    _custom_access: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::authenticatedAccess'
+  options:
+    no_cache: TRUE
+
+# Bookmarks/notes/streak dashboard. Open access; the controller redirects
+# anonymous visitors to /user/login with destination=/quran/my-account so
+# they don't hit a generic 403 when they arrive without a Drupal session.
+gablvm_core.qf_account:
+  path: '/quran/my-account'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::account'
+    _title: 'Your Quran.com account'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+# AJAX: add a verse to the user's default ("Favorites") bookmark collection.
+gablvm_core.qf_bookmark_add:
+  path: '/quran/api/bookmark'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::bookmarkAdd'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::authenticatedAccess'
+  options:
+    no_cache: TRUE
+
+# AJAX: remove a bookmark from the user's default collection.
+gablvm_core.qf_bookmark_remove:
+  path: '/quran/api/bookmark/remove'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::bookmarkRemove'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::authenticatedAccess'
+  options:
+    no_cache: TRUE
+
+# AJAX: log a reading-session at a surah/verse position.
+gablvm_core.qf_reading_session:
+  path: '/quran/api/reading-session'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::readingSessionLog'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::authenticatedAccess'
+  options:
+    no_cache: TRUE
+
+# AJAX: create a note on a verse.
+gablvm_core.qf_note_create:
+  path: '/quran/api/note'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::noteCreate'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::authenticatedAccess'
+  options:
+    no_cache: TRUE
+
+# AJAX: remove a note by id.
+gablvm_core.qf_note_remove:
+  path: '/quran/api/note/remove'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::noteRemove'
+  methods: [POST]
+  requirements:
+    _custom_access: '\Drupal\gablvm_core\Controller\QuranFoundationOauthController::authenticatedAccess'
+  options:
+    no_cache: TRUE
+
+# Prayer Times - accessible to everyone
+gablvm_core.prayer_times:
+  path: '/prayer-times'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\PrayerTimesController::display'
+    _title: 'Prayer Times'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+# Hijri Calendar - accessible to everyone
+gablvm_core.hijri_calendar:
+  path: '/islam-calendar'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\HijriCalendarController::display'
+    _title: 'Islamic Calendar'
+  requirements:
+    _access: 'TRUE'
+  options:
+    no_cache: TRUE
+
+# Islamic Calendar iCal export - accessible to everyone
+gablvm_core.hijri_calendar_export:
+  path: '/islam-calendar/export'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\HijriCalendarController::exportIcal'
+  requirements:
+    _access: 'TRUE'
+
+# AJAX endpoint for Quran audio - accessible to everyone
+gablvm_core.quran_audio:
+  path: '/api/quran/audio/{surah}/{reciter}'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranPlayerController::getAudio'
+  requirements:
+    _access: 'TRUE'
+    surah: '\d+'
+    reciter: '\d+'
+  options:
+    no_cache: TRUE
+
+# AJAX endpoint for verses with translations and audio
+gablvm_core.quran_verses:
+  path: '/api/quran/verses/{surah}/{reciter}/{translation}'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranPlayerController::getVersesWithAudio'
+  requirements:
+    _access: 'TRUE'
+    surah: '\d+'
+    reciter: '\d+'
+    translation: '\d+'
+  options:
+    no_cache: TRUE
+
+# AJAX: cumulative per-verse timing array for chapter (gapless) playback,
+# used by the bookmark button to know which verse is currently being recited.
+gablvm_core.quran_chapter_timings:
+  path: '/api/quran/chapter-timings/{surah}/{reciter}'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QuranPlayerController::getChapterTimings'
+  requirements:
+    _access: 'TRUE'
+    surah: '\d+'
+    reciter: '\d+'
+
+# Qibla Finder - accessible to everyone
+gablvm_core.qibla_finder:
+  path: '/qibla'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\QiblaFinderController::display'
+    _title: 'Qibla Finder'
+  requirements:
+    _access: 'TRUE'
+
+# Newsletter subscription page
+gablvm_core.newsletter:
+  path: '/newsletter'
+  defaults:
+    _controller: '\Drupal\gablvm_core\Controller\NewsletterController::display'
+    _title: 'Newsletter'
+  requirements:
+    _access: 'TRUE'
+

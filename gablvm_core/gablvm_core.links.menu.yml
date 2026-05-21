@@ -1,0 +1,12 @@
+# Admin menu link - appears under Configuration
+gablvm_core.settings:
+  title: 'GABLVM Settings'
+  description: 'Configure Quran API, Prayer Times API, and module settings.'
+  route_name: gablvm_core.settings
+  parent: system.admin_config_services
+  weight: 10
+
+# Note: Main navigation links for Quran Player, Prayer Times, and Hijri Calendar
+# are now managed via the menu UI under "Islamic Tools" parent menu item.
+# This allows for better organization and flexibility.
+

@@ -1,0 +1,248 @@
+{#
+/**
+ * @file
+ * Experimental Tafsir Lab - reads scholarly Quranic commentary per verse.
+ *
+ * Hidden route: /quran/lab/tafsir
+ * Not linked from navigation. Published for direct-URL testing only.
+ *
+ * Accessibility: headings structured for VoiceOver rotor navigation.
+ * Debug mode: append ?debug=1 to reveal a client-side debug log toggle.
+ */
+#}
+<div class="quran-player tafsir-lab" id="tafsir-lab">
+
+  <div class="tafsir-intro">
+    <p>{{ 'Read scholarly commentary (tafsir) alongside each verse of the Quran. Pick a surah and a commentary, then read verse by verse. All commentary is screen-reader-friendly.'|t }}</p>
+  </div>
+
+  {# ===== PICKER FORM ===== #}
+  <section class="quran-section" aria-labelledby="picker-heading">
+    <h2 id="picker-heading" class="quran-section-heading">{{ 'Choose a surah and a tafsir'|t }}</h2>
+
+    <form method="get" action="/quran/tafsir" class="quran-form">
+      <div class="quran-form-row">
+        <div class="quran-form-group">
+          <label for="tafsir-surah-select" class="quran-label">{{ 'Surah'|t }}</label>
+          <select id="tafsir-surah-select" name="surah" class="quran-select">
+            {% for s in surahs %}
+              <option value="{{ s.id }}"{% if s.id == current_surah %} selected{% endif %}>{{ s.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+
+        <div class="quran-form-group">
+          <label for="tafsir-select" class="quran-label">{{ 'Tafsir (commentary)'|t }}</label>
+          <select id="tafsir-select" name="tafsir" class="quran-select">
+            {% for t in tafsir_resources %}
+              <option value="{{ t.id }}"{% if t.id == current_tafsir_id %} selected{% endif %}>
+                {{ t.name }}, {{ t.author_name }}{% if t.coverage_pct is not null %} ({{ t.coverage_pct }}% coverage){% endif %}
+              </option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <input type="hidden" name="page" value="1">
+      {% if debug_mode %}
+        <input type="hidden" name="debug" value="1">
+      {% endif %}
+
+      <div class="quran-form-actions">
+        <button type="submit" class="quran-btn quran-btn-primary">{{ 'Load verses'|t }}</button>
+      </div>
+    </form>
+  </section>
+
+  {# ===== RESULTS ===== #}
+  {# .js-listen-aloud opts this section into the site-wide Listen Aloud
+     TTS controls (web/modules/custom/gablvm_core/js/listen-aloud.js). #}
+  <section class="quran-section tafsir-results js-listen-aloud" aria-labelledby="results-heading">
+    <h2 id="results-heading" class="quran-section-heading">
+      {% if current_surah_name %}
+        {{ current_surah_name }} {{ '· Commentary by'|t }} {{ current_tafsir_name }}
+      {% else %}
+        {{ 'Verses and commentary'|t }}
+      {% endif %}
+    </h2>
+
+    {% if error %}
+      <div class="tafsir-error" role="alert">
+        <p>{{ error }}</p>
+      </div>
+    {% elseif groups is empty %}
+      <p>{{ 'No verses to show. Pick a surah and press Load verses.'|t }}</p>
+    {% else %}
+      <p class="tafsir-page-summary">
+        {{ 'Showing page @page of @total (@count verses total)'|t({
+          '@page': current_page,
+          '@total': total_pages,
+          '@count': total_verses,
+        }) }}
+      </p>
+
+      {% if coverage_partial %}
+        <p class="tafsir-coverage-note" role="note">
+          {{ 'Note: this tafsir does not include commentary on every verse. Commentary is available for @with of @total verses in this surah. Verses without commentary still show the Arabic text.'|t({
+            '@with': verses_with_tafsir,
+            '@total': total_verses,
+          }) }}
+        </p>
+      {% endif %}
+
+      <ol class="tafsir-group-list">
+        {% for group in groups %}
+          <li class="tafsir-verse{% if group.is_grouped %} tafsir-group-combined{% endif %}">
+            <article aria-labelledby="group-{{ group.first_key|replace({':': '-'}) }}-heading">
+              <h3 id="group-{{ group.first_key|replace({':': '-'}) }}-heading" class="tafsir-verse-heading">
+                {{ group.range_label }}{% if group.is_grouped and group.has_tafsir %} <span class="tafsir-group-note">{{ '(one commentary covers these @n verses)'|t({'@n': group.verse_count}) }}</span>{% endif %}
+              </h3>
+
+              <div class="tafsir-group-verses">
+                {% for v in group.verses %}
+                  <p class="tafsir-verse-arabic js-listen-aloud-skip" lang="ar" dir="rtl">{{ v.text_uthmani }}</p>
+                {% endfor %}
+              </div>
+
+              {% if group.has_tafsir %}
+                <div class="tafsir-verse-commentary" aria-label="{{ 'Commentary for @range'|t({'@range': group.range_label}) }}">
+                  {{ group.tafsir_html|raw }}
+                </div>
+              {% else %}
+                <p class="tafsir-verse-missing">
+                  {% if group.next_covered_verse_key %}
+                    {{ 'These verses are not covered in this tafsir. The next commentary begins at verse @next.'|t({'@next': group.next_covered_verse_key}) }}
+                  {% else %}
+                    {{ 'These verses are not covered in this tafsir.'|t }}
+                  {% endif %}
+                </p>
+              {% endif %}
+            </article>
+          </li>
+        {% endfor %}
+      </ol>
+
+      {# ===== PAGINATION ===== #}
+      {% if total_pages > 1 %}
+        <nav class="tafsir-pagination" aria-label="{{ 'Verse pages'|t }}">
+          {% set base = '/quran/tafsir?surah=' ~ current_surah ~ '&tafsir=' ~ current_tafsir_id %}
+          {% set debug_suffix = debug_mode ? '&debug=1' : '' %}
+          {# debug_suffix kept for future use; flag is appended inline below. #}
+          <ul class="tafsir-pagination-list">
+            {% if current_page > 1 %}
+              <li><a class="quran-btn" href="{{ base }}&page={{ current_page - 1 }}{{ debug_suffix }}"><span aria-hidden="true">&larr;</span> {{ 'Previous page'|t }}</a></li>
+            {% endif %}
+            <li class="tafsir-pagination-current" aria-current="page">
+              {{ 'Page @n of @t'|t({'@n': current_page, '@t': total_pages}) }}
+            </li>
+            {% if current_page < total_pages %}
+              <li><a class="quran-btn" href="{{ base }}&page={{ current_page + 1 }}{{ debug_suffix }}">{{ 'Next page'|t }} <span aria-hidden="true">&rarr;</span></a></li>
+            {% endif %}
+          </ul>
+        </nav>
+      {% endif %}
+    {% endif %}
+  </section>
+
+  {# ===== DEBUG PANEL (revealed by ?debug=1) ===== #}
+  <section class="quran-section" id="tafsir-debug-section" style="display:none;">
+    <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:8px;">
+      <h2 class="quran-section-heading" style="margin:0;">Debug Log</h2>
+      <div>
+        <button type="button" id="tafsir-debug-copy-btn" class="quran-btn" style="font-size:12px; padding:4px 10px;">Copy Log</button>
+        <button type="button" id="tafsir-debug-clear-btn" class="quran-btn" style="font-size:12px; padding:4px 10px;">Clear</button>
+      </div>
+    </div>
+    {# Brand-colored debug panel (Audit finding 2026-05-17). #}
+    <pre id="tafsir-debug-log" style="background:var(--gablvm-parchment-warm,#f5efe0); color:var(--gablvm-gold-text,#6e5119); border:1px solid var(--gablvm-parchment-border,#e8e2d1); font-family:monospace; font-size:11px; padding:12px; border-radius:6px; max-height:300px; overflow-y:auto; white-space:pre-wrap; word-break:break-all;"></pre>
+  </section>
+
+  <div style="text-align:center; margin-top:8px;">
+    <button type="button" id="tafsir-debug-toggle-btn" style="background:none; border:none; color:#888; font-size:11px; cursor:pointer; text-decoration:underline; display:none;">Show Debug Log</button>
+  </div>
+
+</div>
+
+<script>
+(function () {
+  var debugLog = [];
+  function log(msg) {
+    var ts = new Date().toLocaleTimeString();
+    var entry = '[' + ts + '] ' + msg;
+    try { console.log('[TafsirLab] ' + msg); } catch (e) {}
+    debugLog.push(entry);
+    if (debugLog.length > 200) debugLog.shift();
+    var el = document.getElementById('tafsir-debug-log');
+    if (el) {
+      el.textContent = debugLog.join('\n');
+      el.scrollTop = el.scrollHeight;
+    }
+  }
+
+  // Reveal debug toggle when ?debug=1 is in the URL.
+  if (window.location.search.indexOf('debug=1') !== -1) {
+    var toggle = document.getElementById('tafsir-debug-toggle-btn');
+    if (toggle) toggle.style.display = '';
+  }
+
+  var debugSection = document.getElementById('tafsir-debug-section');
+  var debugToggle = document.getElementById('tafsir-debug-toggle-btn');
+  var debugCopy = document.getElementById('tafsir-debug-copy-btn');
+  var debugClear = document.getElementById('tafsir-debug-clear-btn');
+
+  if (debugToggle && debugSection) {
+    debugToggle.addEventListener('click', function () {
+      if (debugSection.style.display === 'none') {
+        debugSection.style.display = '';
+        debugToggle.textContent = 'Hide Debug Log';
+      } else {
+        debugSection.style.display = 'none';
+        debugToggle.textContent = 'Show Debug Log';
+      }
+    });
+  }
+  if (debugCopy) {
+    debugCopy.addEventListener('click', function () {
+      var el = document.getElementById('tafsir-debug-log');
+      var text = el ? el.textContent : '';
+      if (navigator.clipboard) {
+        navigator.clipboard.writeText(text).then(function () {
+          debugCopy.textContent = 'Copied!';
+          setTimeout(function () { debugCopy.textContent = 'Copy Log'; }, 2000);
+        });
+      } else {
+        var ta = document.createElement('textarea');
+        ta.value = text;
+        document.body.appendChild(ta);
+        ta.select();
+        try { document.execCommand('copy'); } catch (e) {}
+        document.body.removeChild(ta);
+        debugCopy.textContent = 'Copied!';
+        setTimeout(function () { debugCopy.textContent = 'Copy Log'; }, 2000);
+      }
+    });
+  }
+  if (debugClear) {
+    debugClear.addEventListener('click', function () {
+      var el = document.getElementById('tafsir-debug-log');
+      if (el) { el.textContent = ''; debugLog = []; }
+    });
+  }
+
+  // Bootstrap log entries.
+  log('Page loaded');
+  log('URL: ' + window.location.pathname + window.location.search);
+  var surahEl = document.getElementById('tafsir-surah-select');
+  var tafsirEl = document.getElementById('tafsir-select');
+  log('Surah select value: ' + (surahEl ? surahEl.value : '(missing)'));
+  log('Tafsir select value: ' + (tafsirEl ? tafsirEl.value : '(missing)'));
+  var verseItems = document.querySelectorAll('.tafsir-verse');
+  var groupItems = document.querySelectorAll('.tafsir-group-combined');
+  log('Rendered groups on this page: ' + verseItems.length + ' (' + groupItems.length + ' grouped, rest single-verse)');
+  var errorEl = document.querySelector('.tafsir-error');
+  if (errorEl) log('ERROR banner present: ' + errorEl.textContent.trim().substring(0, 120));
+  window.addEventListener('error', function (ev) {
+    log('JS error: ' + (ev.message || 'unknown') + ' @ ' + (ev.filename || '') + ':' + (ev.lineno || ''));
+  });
+})();
+</script>
