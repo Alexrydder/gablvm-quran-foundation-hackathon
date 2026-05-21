@@ -1,0 +1,1906 @@
+<?php
+
+/**
+ * @file
+ * GABLVM Core module - Essential Islamic features for blind and low vision Muslims.
+ *
+ * Provides Quran Player, Prayer Times, and Hijri Calendar with full
+ * WCAG 2.1 Level AA accessibility compliance.
+ */
+
+use Drupal\Core\Routing\RouteMatchInterface;
+use Drupal\Core\Form\FormStateInterface;
+use Drupal\Core\Render\BubbleableMetadata;
+use Drupal\user\UserInterface;
+use Drupal\Core\Breadcrumb\Breadcrumb;
+use Drupal\Core\Entity\EntityInterface;
+use Drupal\Core\Entity\Display\EntityViewDisplayInterface;
+use Drupal\Core\Link;
+use Drupal\views\ViewExecutable;
+use Drupal\views\Plugin\views\query\QueryPluginBase;
+
+/**
+ * Implements hook_page_attachments().
+ *
+ * Attaches global CSS for site-wide enhancements.
+ */
+function gablvm_core_page_attachments(array &$attachments) {
+  // Attach global styles to all pages.
+  $attachments['#attached']['library'][] = 'gablvm_core/global';
+
+  // Attach external-link interstitial (except on admin routes).
+  $is_admin = \Drupal::service('router.admin_context')->isAdminRoute();
+  if (!$is_admin) {
+    $attachments['#attached']['library'][] = 'gablvm_core/extlink_interstitial';
+  }
+
+  // Attach resources styles on the /resources listing page.
+  $route_match = \Drupal::routeMatch();
+  $route_name = $route_match->getRouteName();
+  if ($route_name === 'view.resources.page_1') {
+    $attachments['#attached']['library'][] = 'gablvm_core/resources';
+  }
+
+  // Attach event timezone library on the events view page.
+  if ($route_name === 'view.events.page_1') {
+    $attachments['#attached']['library'][] = 'gablvm_core/event_timezone';
+  }
+
+  // Attach Ramadan library during Ramadan on relevant pages.
+  if (_gablvm_core_is_ramadan()) {
+    $is_front = \Drupal::service('path.matcher')->isFrontPage();
+    if ($is_front || $route_name === 'view.resources.page_1' || $route_name === 'gablvm_core.prayer_times') {
+      $attachments['#attached']['library'][] = 'gablvm_core/ramadan';
+    }
+  }
+}
+
+/**
+ * Implements hook_page_top().
+ *
+ * Injects the Ramadan banner on the front page during Ramadan.
+ */
+function gablvm_core_page_top(array &$page_top) {
+  if (!\Drupal::service('path.matcher')->isFrontPage()) {
+    return;
+  }
+
+  // Ramadan 1447 and Eid al-Fitr 2026 have concluded.
+  // Banner disabled. Will be re-enabled for Ramadan 1448 (2027).
+  return;
+
+  // Eid al-Fitr 1447: March 20, 2026 (announced by Saudi Arabia).
+  // The banner content is swapped client-side based on the visitor's local date:
+  // - Before Eid date: Ramadan Mubarak banner
+  // - On/after Eid date: Eid Mubarak banner (shown for 3 days)
+  // - Time-of-day greeting based on visitor's local clock
+  $eid_date = '2026-03-20';
+  $eid_end = '2026-03-22'; // Show Eid banner for 3 days
+
+  $page_top['ramadan_banner'] = [
+    '#markup' => '<div id="ramadan-banner" class="ramadan-banner" role="complementary" aria-label="' . t('Greeting') . '" data-eid-date="' . $eid_date . '" data-eid-end="' . $eid_end . '">'
+      . '<button type="button" class="ramadan-banner-close" aria-label="' . t('Dismiss banner') . '">&times;</button>'
+      . '<p class="ramadan-banner-greeting" id="banner-greeting" aria-live="polite"></p>'
+      . '<p class="ramadan-banner-title" id="banner-title"><span class="ramadan-banner-crescent" aria-hidden="true">&#9770;</span> ' . t('Ramadan Mubarak') . '</p>'
+      . '<p class="ramadan-banner-subtitle" id="banner-subtitle">' . t('May this blessed month bring you peace, reflection, and closeness to Allah.') . '</p>'
+      . '<nav aria-label="' . t('Quick links') . '" id="banner-nav"><ul class="ramadan-banner-links">'
+      . '<li><a href="/prayer-times">' . t('Prayer Times') . '</a></li>'
+      . '<li><a href="/quran-listen">' . t('Quran Player') . '</a></li>'
+      . '<li><a href="/resources?field_resource_category_target_id=26">' . t('Ramadan Resources') . '</a></li>'
+      . '</ul></nav>'
+      . '</div>',
+    '#weight' => -100,
+  ];
+}
+
+/**
+ * Checks if the current date falls within Ramadan.
+ *
+ * Uses the HijriCalendarService to check if the current Hijri month is 9
+ * (Ramadan). The service caches API responses for 1 hour and falls back to
+ * the Kuwaiti algorithm if the API is down.
+ *
+ * @return bool
+ *   TRUE if the current Hijri month is Ramadan.
+ */
+function _gablvm_core_is_ramadan(): bool {
+  $result = &drupal_static(__FUNCTION__);
+  if (isset($result)) {
+    return $result;
+  }
+
+  try {
+    /** @var \Drupal\gablvm_core\Service\HijriCalendarService $hijri_service */
+    $hijri_service = \Drupal::service('gablvm_core.hijri_calendar');
+    $hijri_date = $hijri_service->getCurrentHijriDate();
+    $result = !empty($hijri_date['month']) && (int) $hijri_date['month'] === 9;
+  }
+  catch (\Exception $e) {
+    $result = FALSE;
+  }
+
+  return $result;
+}
+
+/**
+ * Implements hook_preprocess_node().
+ *
+ * Attaches resource-specific CSS to individual resource pages.
+ */
+function gablvm_core_preprocess_node(&$variables) {
+  $node = $variables['node'];
+  // Use bundle() instead of getType() (deprecated in Drupal 10+).
+  if ($node->bundle() === 'resource' && $variables['view_mode'] === 'full') {
+    $variables['#attached']['library'][] = 'gablvm_core/resources';
+  }
+  if ($node->bundle() === 'event' && $variables['view_mode'] === 'full') {
+    $variables['#attached']['library'][] = 'gablvm_core/event_timezone';
+  }
+}
+
+/**
+ * Implements hook_form_alter().
+ *
+ * Improves accessibility of content forms and simplenews subscription forms.
+ */
+function gablvm_core_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Attach admin form styles to node forms.
+  if (strpos($form_id, 'node_') === 0 && (strpos($form_id, '_form') !== FALSE || strpos($form_id, '_edit_form') !== FALSE)) {
+    $form['#attached']['library'][] = 'gablvm_core/admin_forms';
+  }
+
+  // Clean up simplenews subscription block forms.
+  if (strpos($form_id, 'simplenews_subscriptions_block_') === 0) {
+    // Hide the subscriptions field completely since we only have one newsletter
+    // and it's pre-selected. Users don't need to see/select it.
+    if (isset($form['subscriptions'])) {
+      $form['subscriptions']['#access'] = FALSE;
+    }
+
+    // Clean up the message field - remove if it duplicates page content.
+    if (isset($form['message'])) {
+      $form['message']['#access'] = FALSE;
+    }
+
+    // Simplify the email field label.
+    if (isset($form['mail'])) {
+      $form['mail']['widget'][0]['value']['#title'] = t('Email address');
+      $form['mail']['widget'][0]['value']['#placeholder'] = t('Enter your email');
+      // Remove any redundant description.
+      unset($form['mail']['widget'][0]['value']['#description']);
+    }
+
+    // Hide language selector for anonymous users (not needed).
+    if (isset($form['langcode']) && \Drupal::currentUser()->isAnonymous()) {
+      $form['langcode']['#access'] = FALSE;
+    }
+
+    // Clean up the submit button text.
+    if (isset($form['actions']['submit'])) {
+      $form['actions']['submit']['#value'] = t('Subscribe');
+    }
+
+    // Hide the "Manage existing" link from the form actions
+    // (we show it separately in the template).
+    if (isset($form['actions']['manage'])) {
+      $form['actions']['manage']['#access'] = FALSE;
+    }
+  }
+
+  // Improve contact form accessibility.
+  if ($form_id === 'contact_message_feedback_form') {
+    // Add role="form" and aria-label for screen readers.
+    $form['#attributes']['role'] = 'form';
+    $form['#attributes']['aria-label'] = t('Contact form');
+
+    // Visible-to-screen-reader-only boundary markers. Originally these used
+    // role="status" so VoiceOver on iOS would announce form start/end, but
+    // that triggers a polite live-region announcement on every page load
+    // (these strings are static, not status updates — wrong semantics).
+    // Dropped the role; aria-label on $form['#attributes'] above is enough.
+    $form['form_start_marker'] = [
+      '#markup' => '<div class="visually-hidden">' . t('Contact form start. All fields marked as required must be completed.') . '</div>',
+      '#weight' => -100,
+    ];
+    $form['form_end_marker'] = [
+      '#markup' => '<div class="visually-hidden">' . t('Contact form end.') . '</div>',
+      '#weight' => 999,
+    ];
+
+    // Add a category/reason dropdown before the subject field.
+    $form['category'] = [
+      '#type' => 'select',
+      '#title' => t('Category'),
+      '#options' => [
+        '' => t('-- Select a category --'),
+        'general' => t('General Inquiry'),
+        'accessibility' => t('Accessibility'),
+        'feedback' => t('Feedback'),
+        'bug_report' => t('Bug Report'),
+        'support' => t('Support Request'),
+        'partnership' => t('Partnership or Collaboration'),
+        'other' => t('Other'),
+      ],
+      '#required' => TRUE,
+      '#weight' => -10,
+    ];
+
+    // Make subject optional when a category is selected.
+    if (isset($form['subject'])) {
+      $form['subject']['widget'][0]['value']['#required'] = FALSE;
+      $form['subject']['widget'][0]['value']['#placeholder'] = t('Optional if a category is selected');
+    }
+
+    // Add custom validation and submit handlers.
+    // The validate handler also modifies the subject to include the category
+    // prefix, because submit handlers appended via #submit[] run AFTER
+    // Drupal's default save() which sends the email.
+    $form['#validate'][] = '_gablvm_core_contact_form_validate';
+  }
+}
+
+/**
+ * Implements hook_form_user_login_form_alter().
+ *
+ * Brings the create-account and forgot-password flows forward as inline links
+ * on the login page. The default Drupal UX hides them behind the local-tasks
+ * tabs, which is poor discoverability for keyboard / screen-reader users.
+ */
+function gablvm_core_form_user_login_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Clearer label: Drupal accepts both name and email at this field, but the
+  // default "Username" label is misleading for users who only remember their
+  // email address.
+  if (isset($form['name'])) {
+    $form['name']['#title'] = t('Email or username');
+    $form['name']['#attributes']['autocomplete'] = 'username';
+  }
+
+  // Match the H1 wording: "Sign in" instead of the Drupal default "Log in".
+  if (isset($form['actions']['submit'])) {
+    $form['actions']['submit']['#value'] = t('Sign in');
+  }
+
+  // Inline "Forgot your password?" link rendered as a #suffix on the password
+  // field so it sits next to the input (above the submit button), where users
+  // are most likely to need it. The auth-extras block below is correspondingly
+  // slimmer for the login route - just the create-account prompt.
+  if (isset($form['pass'])) {
+    $forgot_url = \Drupal\Core\Url::fromRoute('user.pass')->toString();
+    $form['pass']['#suffix'] = '<a class="gablvm-auth-extras__link gablvm-auth-extras__link--inline" href="' . $forgot_url . '">' . t('Forgot your password?') . '</a>';
+  }
+
+  _gablvm_core_inject_auth_extras($form, 'login');
+
+  // "Sign in with Quran.com" button — primary alternative to email/password.
+  // Rendered ABOVE the form so visitors who already have a Quran.com account
+  // see the one-click path first. Anonymous-accessible OAuth route.
+  // Carries through the current ?destination= so a visitor who landed on
+  // /user/login from /quran-listen (or any other page) gets routed back there
+  // after the QF round-trip rather than dumped on /quran/my-account.
+  //
+  // Drupal's request handler strips ?destination= from the query bag early
+  // for /user/login, so $request->query->get('destination') returns NULL
+  // here even when the URL had it. Read the raw QUERY_STRING from the
+  // request URI directly to recover it. We still validate the result with
+  // safeInternal-prefix logic before propagating.
+  $current_destination = NULL;
+  $request_uri = \Drupal::request()->getRequestUri();
+  if (is_string($request_uri) && str_contains($request_uri, '?')) {
+    parse_str(substr($request_uri, strpos($request_uri, '?') + 1), $query_pairs);
+    if (isset($query_pairs['destination']) && is_string($query_pairs['destination'])) {
+      $current_destination = $query_pairs['destination'];
+    }
+  }
+  $qf_url_options = [];
+  if (is_string($current_destination)
+      && str_starts_with($current_destination, '/')
+      && !str_starts_with($current_destination, '//')) {
+    $qf_url_options['query']['destination'] = $current_destination;
+  }
+  $qf_url = \Drupal\Core\Url::fromRoute('gablvm_core.qf_sign_in', [], $qf_url_options)->toString();
+  $form['gablvm_qf_signin'] = [
+    '#weight' => -100,
+    '#markup' => '<div class="gablvm-qf-signin">'
+      . '<a class="gablvm-qf-signin__btn" href="' . $qf_url . '" rel="nofollow">'
+      . '<span class="gablvm-qf-signin__icon" aria-hidden="true">QC</span>'
+      . '<span class="gablvm-qf-signin__label">' . t('Sign in with Quran.com') . '</span>'
+      . '</a>'
+      . '<div class="gablvm-qf-signin__divider">'
+      . '<span class="gablvm-qf-signin__divider-text">' . t('or sign in with email') . '</span>'
+      . '</div></div>',
+  ];
+
+  // Attach the gablvm_theme style for the button so it looks the same as the
+  // rest of the auth flow.
+  $form['#attached']['library'][] = 'gablvm_core/qf-signin-button';
+}
+
+/**
+ * Implements hook_form_user_register_form_alter().
+ *
+ * Improves accessibility of the user registration form for screen readers
+ * and adds an inline "already have an account" link back to the login page.
+ */
+function gablvm_core_form_user_register_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  _gablvm_core_improve_user_form_accessibility($form);
+  if (isset($form['actions']['submit'])) {
+    $form['actions']['submit']['#value'] = t('Create account');
+  }
+  _gablvm_core_inject_auth_extras($form, 'register');
+}
+
+/**
+ * Implements hook_form_user_pass_alter().
+ *
+ * Adds inline links back to the login and registration pages from the
+ * password reset form so users don't need to use the hidden tab navigation.
+ */
+function gablvm_core_form_user_pass_alter(&$form, FormStateInterface $form_state, $form_id) {
+  if (isset($form['name'])) {
+    $form['name']['#title'] = t('Email or username');
+  }
+  if (isset($form['actions']['submit'])) {
+    $form['actions']['submit']['#value'] = t('Send reset link');
+  }
+  _gablvm_core_inject_auth_extras($form, 'pass');
+}
+
+/**
+ * Implements hook_form_user_form_alter().
+ *
+ * Improves accessibility of the user edit form for screen readers.
+ */
+function gablvm_core_form_user_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  _gablvm_core_improve_user_form_accessibility($form);
+}
+
+/**
+ * Helper that appends inline auth-flow links to user login / register / pass
+ * forms. The links replace the local-tasks tabs (which CSS hides on these
+ * routes) so the create-account / forgot-password / sign-in entries are
+ * surfaced inside the form area.
+ *
+ * @param array $form
+ *   The form array to modify.
+ * @param string $context
+ *   One of 'login', 'register', 'pass'.
+ */
+function _gablvm_core_inject_auth_extras(array &$form, string $context) {
+  $links = [];
+  switch ($context) {
+    case 'login':
+      // Forgot-password lives next to the password field as a #suffix; here
+      // we only show the create-account prompt under the submit button.
+      $links[] = [
+        'lead' => t("Don't have an account?"),
+        'href' => '/user/register',
+        'text' => t('Create one'),
+      ];
+      break;
+
+    case 'register':
+      $links[] = [
+        'lead' => t('Already have an account?'),
+        'href' => '/user/login',
+        'text' => t('Sign in'),
+      ];
+      break;
+
+    case 'pass':
+      $links[] = [
+        'lead' => t('Remember it?'),
+        'href' => '/user/login',
+        'text' => t('Sign in'),
+      ];
+      $links[] = [
+        'lead' => t("Don't have an account?"),
+        'href' => '/user/register',
+        'text' => t('Create one'),
+      ];
+      break;
+  }
+
+  // Plain container, no landmark role. Two inline auth-flow links don't
+  // warrant a `<nav>` landmark — the announcement noise (navigation
+  // landmark...end of navigation landmark) outweighs any wayfinding benefit.
+  $form['gablvm_auth_extras'] = [
+    '#type' => 'container',
+    '#attributes' => [
+      'class' => ['gablvm-auth-extras'],
+    ],
+    '#weight' => 100,
+  ];
+
+  foreach ($links as $i => $link) {
+    $form['gablvm_auth_extras']['link_' . $i] = [
+      '#type' => 'inline_template',
+      '#template' => '<p class="gablvm-auth-extras__line">{% if lead %}<span class="gablvm-auth-extras__lead">{{ lead }}</span> {% endif %}<a class="gablvm-auth-extras__link" href="{{ href }}">{{ text }}</a></p>',
+      '#context' => [
+        'lead' => $link['lead'],
+        'href' => $link['href'],
+        'text' => $link['text'],
+      ],
+    ];
+  }
+}
+
+/**
+ * Helper function to improve user form accessibility.
+ *
+ * Addresses VoiceOver issues where double-tapping form fields
+ * can trigger nearby links instead of activating the field.
+ *
+ * @param array $form
+ *   The form array to modify.
+ */
+function _gablvm_core_improve_user_form_accessibility(array &$form) {
+  // Add attributes to prevent accidental link activation on text inputs.
+  $text_fields = ['name', 'mail', 'pass'];
+
+  foreach ($text_fields as $field_name) {
+    if (isset($form['account'][$field_name])) {
+      // For username field.
+      if ($field_name === 'name' && isset($form['account'][$field_name]['#type'])) {
+        $form['account'][$field_name]['#attributes']['autocomplete'] = 'username';
+        $form['account'][$field_name]['#attributes']['autocorrect'] = 'off';
+        $form['account'][$field_name]['#attributes']['autocapitalize'] = 'off';
+        $form['account'][$field_name]['#attributes']['spellcheck'] = 'false';
+      }
+      // For email field.
+      elseif ($field_name === 'mail' && isset($form['account'][$field_name]['#type'])) {
+        $form['account'][$field_name]['#attributes']['autocomplete'] = 'email';
+        $form['account'][$field_name]['#attributes']['inputmode'] = 'email';
+      }
+    }
+  }
+
+  // Add custom CSS class for admin form styling.
+  $form['#attributes']['class'][] = 'gablvm-user-form';
+
+  // Attach the admin accessibility library.
+  $form['#attached']['library'][] = 'gablvm_core/admin_accessibility';
+}
+
+/**
+ * Implements hook_form_node_resource_form_alter().
+ *
+ * Customizes the Resource content form for accessibility and validation.
+ */
+function gablvm_core_form_node_resource_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  _gablvm_core_customize_resource_form($form, $form_state);
+}
+
+/**
+ * Implements hook_form_node_resource_edit_form_alter().
+ */
+function gablvm_core_form_node_resource_edit_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  _gablvm_core_customize_resource_form($form, $form_state);
+}
+
+/**
+ * Helper function to customize Resource node forms.
+ *
+ * Adds validation to ensure either a link OR file is provided,
+ * and improves form accessibility.
+ *
+ * @param array $form
+ *   The form array.
+ * @param \Drupal\Core\Form\FormStateInterface $form_state
+ *   The form state.
+ */
+function _gablvm_core_customize_resource_form(array &$form, FormStateInterface $form_state) {
+  // Add custom validation to ensure either link or file is provided.
+  $form['#validate'][] = '_gablvm_core_resource_form_validate';
+
+  // Improve field descriptions for accessibility.
+  if (isset($form['field_resource_link'])) {
+    $form['field_resource_link']['widget'][0]['uri']['#description'] = t('Enter the full URL to an external resource (e.g., https://example.com/resource).');
+    $form['field_resource_link']['widget'][0]['title']['#description'] = t('Enter the link text that will be displayed (e.g., "Visit Resource").');
+  }
+
+  if (isset($form['field_resource_file'])) {
+    $form['field_resource_file']['widget'][0]['#description'] = t('Upload a document file. Allowed types: PDF, DOC, DOCX, XLS, XLSX, PPT, PPTX, TXT, RTF. Maximum size: 10 MB.');
+  }
+
+  // Add a note explaining the either/or requirement.
+  $form['resource_type_note'] = [
+    '#type' => 'markup',
+    '#markup' => '<div class="messages messages--info" role="note" aria-label="' . t('Resource requirement') . '"><p>' . t('<strong>Note:</strong> Please provide either an external link OR upload a file. At least one is required.') . '</p></div>',
+    '#weight' => 1.5,
+  ];
+}
+
+/**
+ * Validation callback for Resource node forms.
+ *
+ * Ensures that either a link or file is provided.
+ */
+function _gablvm_core_resource_form_validate(array &$form, FormStateInterface $form_state) {
+  // Get the values for both fields.
+  $link_value = $form_state->getValue('field_resource_link');
+  $file_value = $form_state->getValue('field_resource_file');
+
+  // Check if link is provided.
+  $has_link = FALSE;
+  if (!empty($link_value[0]['uri'])) {
+    $has_link = TRUE;
+  }
+
+  // Check if file is provided.
+  $has_file = FALSE;
+  if (!empty($file_value[0]['fids']) || !empty($file_value[0]['target_id'])) {
+    $has_file = TRUE;
+  }
+
+  // Require at least one.
+  if (!$has_link && !$has_file) {
+    $form_state->setErrorByName('field_resource_link', t('Please provide either an external link or upload a file. At least one is required for a resource.'));
+  }
+}
+
+/**
+ * Implements hook_form_node_event_form_alter().
+ *
+ * Customizes the Event content form for better accessibility.
+ */
+function gablvm_core_form_node_event_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Make the title field more descriptive.
+  if (isset($form['title'])) {
+    $form['title']['widget'][0]['value']['#description'] = t('Enter a clear, descriptive title (e.g., "2026 Ramadan Night #3 - EPIC MASJID").');
+  }
+
+  // Improve event date and time field with timezone hint.
+  if (isset($form['field_event_date'])) {
+    $form['field_event_date']['widget'][0]['value']['#description'] = t('Enter the date and time in Central Time (CT). Use the date picker for the date and enter the time in HH:MM format.');
+  }
+
+  // Improve link field.
+  if (isset($form['field_event_link'])) {
+    $form['field_event_link']['widget'][0]['uri']['#description'] = t('Enter the full URL (e.g., https://youtube.com/live/... or https://zoom.us/...).');
+    $form['field_event_link']['widget'][0]['title']['#description'] = t('Enter the text that will be displayed as the link (e.g., "Watch Live" or "Register Now").');
+  }
+
+  // Improve body field.
+  if (isset($form['body'])) {
+    $form['body']['widget'][0]['#description'] = t('Provide details about the event including time, location, and any requirements.');
+  }
+}
+
+/**
+ * Implements hook_form_node_event_edit_form_alter().
+ */
+function gablvm_core_form_node_event_edit_form_alter(&$form, FormStateInterface $form_state, $form_id) {
+  // Apply the same alterations as the add form.
+  gablvm_core_form_node_event_form_alter($form, $form_state, $form_id);
+}
+
+/**
+ * Implements hook_help().
+ */
+function gablvm_core_help($route_name, RouteMatchInterface $route_match) {
+  switch ($route_name) {
+    case 'help.page.gablvm_core':
+      $output = '<h2>' . t('About GABLVM Core') . '</h2>';
+      $output .= '<p>' . t('This module provides essential Islamic features for the Global Advocacy of Blind and Low Vision Muslims (GABLVM) community.') . '</p>';
+      $output .= '<h3>' . t('Features') . '</h3>';
+      $output .= '<ul>';
+      $output .= '<li>' . t('<strong>Quran Player</strong> - Listen to and read the Holy Quran with multiple reciters and translations.') . '</li>';
+      $output .= '<li>' . t('<strong>Prayer Times</strong> - Accurate prayer times for any location using the Aladhan API.') . '</li>';
+      $output .= '<li>' . t('<strong>Hijri Calendar</strong> - Islamic calendar with date navigation and event information.') . '</li>';
+      $output .= '</ul>';
+      $output .= '<h3>' . t('Configuration') . '</h3>';
+      $output .= '<p>' . t('Configure the module at <a href=":url">Administration > Configuration > Web services > GABLVM Settings</a>.', [
+        ':url' => '/admin/config/services/gablvm',
+      ]) . '</p>';
+      return $output;
+
+    case 'gablvm_core.settings':
+      return '<p>' . t('Configure API credentials and settings for GABLVM Core features.') . '</p>';
+  }
+}
+
+/**
+ * Implements hook_preprocess_views_view().
+ *
+ * Adds a Ramadan highlight link at the top of the resources view.
+ */
+function gablvm_core_preprocess_views_view(&$variables) {
+  $view = $variables['view'];
+  if ($view->id() !== 'resources' || $view->current_display !== 'page_1') {
+    return;
+  }
+
+  if (!_gablvm_core_is_ramadan()) {
+    return;
+  }
+
+  // Add Ramadan Resources highlight bar above the content.
+  $variables['header']['ramadan_highlight'] = [
+    '#markup' => '<div class="ramadan-resources-highlight" role="complementary" aria-label="' . t('Ramadan Resources') . '">'
+      . '<p>' . t('Ramadan Mubarak! Explore our curated Ramadan playlists and resources.') . '</p>'
+      . '<a href="/resources?field_resource_category_target_id=26">' . t('View Ramadan Resources') . '</a>'
+      . '</div>',
+    '#weight' => -100,
+  ];
+}
+
+/**
+ * Implements hook_preprocess_block().
+ *
+ * Adds an anchor ID to the newsletter subscription block for menu linking.
+ */
+function gablvm_core_preprocess_block(&$variables) {
+  // Add anchor ID to the newsletter subscription block.
+  if (isset($variables['plugin_id']) && $variables['plugin_id'] === 'simplenews_subscription_block') {
+    $variables['attributes']['id'] = 'newsletter-form';
+  }
+}
+
+
+/**
+ * Implements hook_token_info().
+ *
+ * Defines custom tokens for user role descriptions in email notifications.
+ */
+function gablvm_core_token_info() {
+  $info = [];
+
+  $info['tokens']['user']['role-name'] = [
+    'name' => t('Role Name'),
+    'description' => t('The primary role name assigned to the user (e.g., Contributor, Content Editor, Administrator).'),
+  ];
+
+  $info['tokens']['user']['role-description'] = [
+    'name' => t('Role Description'),
+    'description' => t('A detailed description of the user role permissions and capabilities.'),
+  ];
+
+  return $info;
+}
+
+/**
+ * Implements hook_tokens().
+ *
+ * Provides token replacements for user role information.
+ */
+function gablvm_core_tokens($type, $tokens, array $data, array $options, BubbleableMetadata $bubbleable_metadata) {
+  $replacements = [];
+
+  if ($type == 'user' && !empty($data['user'])) {
+    /** @var \Drupal\user\UserInterface $account */
+    $account = $data['user'];
+
+    foreach ($tokens as $name => $original) {
+      switch ($name) {
+        case 'role-name':
+          $role_name = _gablvm_core_get_primary_role_name($account);
+          $replacements[$original] = $role_name;
+          break;
+
+        case 'role-description':
+          $description = _gablvm_core_get_role_description($account);
+          $replacements[$original] = $description;
+          break;
+      }
+    }
+  }
+
+  return $replacements;
+}
+
+/**
+ * Gets all assigned role names for a user.
+ *
+ * @param \Drupal\user\UserInterface $account
+ *   The user account.
+ *
+ * @return string
+ *   Comma-separated list of role labels.
+ */
+function _gablvm_core_get_primary_role_name($account) {
+  $roles = $account->getRoles(TRUE);
+  $role_labels = [];
+
+  // Priority order for display (most to least privileged).
+  $priority = ['administrator', 'content_editor', 'contributor'];
+
+  // First add roles in priority order.
+  foreach ($priority as $role_id) {
+    if (in_array($role_id, $roles)) {
+      $role = \Drupal::entityTypeManager()->getStorage('user_role')->load($role_id);
+      if ($role) {
+        $role_labels[] = $role->label();
+      }
+    }
+  }
+
+  // If no special roles found, show Authenticated User.
+  if (empty($role_labels)) {
+    return t('Authenticated User');
+  }
+
+  // Return all roles as comma-separated list.
+  if (count($role_labels) === 1) {
+    return $role_labels[0];
+  }
+  elseif (count($role_labels) === 2) {
+    return $role_labels[0] . ' and ' . $role_labels[1];
+  }
+  else {
+    $last = array_pop($role_labels);
+    return implode(', ', $role_labels) . ', and ' . $last;
+  }
+}
+
+/**
+ * Gets the role description with permissions details for ALL assigned roles.
+ *
+ * Uses accessible formatting with clear headings and bullet points.
+ *
+ * @param \Drupal\user\UserInterface $account
+ *   The user account.
+ *
+ * @return string
+ *   The formatted role description(s).
+ */
+function _gablvm_core_get_role_description($account) {
+  $roles = $account->getRoles(TRUE);
+  $descriptions = [];
+
+  // Define role descriptions with accessible formatting.
+  $role_descriptions = [
+    'administrator' => [
+      'title' => 'Administrator Role',
+      'intro' => 'As an Administrator, you have full access to the GABLVM website. Your capabilities include:',
+      'capabilities' => [
+        'Full administrative access to all site features and settings',
+        'Manage users, roles, and permissions',
+        'Create, edit, and delete all content types',
+        'Manage site configuration and modules',
+        'Access all administrative areas',
+        'Moderate and publish all content',
+        'Manage newsletters and subscriptions',
+      ],
+      'note' => 'Please use these elevated privileges responsibly.',
+    ],
+    'content_editor' => [
+      'title' => 'Content Editor Role',
+      'intro' => 'As a Content Editor, you can help manage and curate content on the GABLVM website. Your capabilities include:',
+      'capabilities' => [
+        'Access the administrative toolbar and content management area',
+        'Create, edit, and manage Articles, Events, Pages, and Resources',
+        'Edit content created by other users',
+        'Manage URL aliases and create clean URLs',
+        'Publish and archive content through the editorial workflow',
+        'Create and manage taxonomy tags',
+        'View and moderate unpublished content',
+        'Access file management',
+      ],
+      'note' => 'Thank you for helping maintain quality content for our community!',
+    ],
+    'contributor' => [
+      'title' => 'Contributor Role',
+      'intro' => 'As a Contributor, you can create content to share with the GABLVM community. Your capabilities include:',
+      'capabilities' => [
+        'Create Articles to share news and stories',
+        'Create Events to announce Islamic occasions and community gatherings',
+        'Create Resources to help other blind and low vision Muslims',
+        'Edit your own content',
+        'Save drafts for review before publication',
+        'View your own unpublished content',
+      ],
+      'note' => 'Note: Your content will be reviewed by our editorial team before being published. Thank you for contributing to our community!',
+    ],
+  ];
+
+  // Build descriptions for each assigned role.
+  foreach ($role_descriptions as $role_id => $desc) {
+    if (in_array($role_id, $roles)) {
+      $section = $desc['title'] . "\n\n";
+      $section .= $desc['intro'] . "\n\n";
+      foreach ($desc['capabilities'] as $index => $capability) {
+        $number = $index + 1;
+        $section .= $number . ". " . $capability . "\n";
+      }
+      $section .= "\n" . $desc['note'];
+      $descriptions[] = $section;
+    }
+  }
+
+  // If no special roles, show default authenticated user description.
+  if (empty($descriptions)) {
+    return "Authenticated Member Role
+
+As a registered member, you can:
+
+1. Access member-only content and features
+2. Post comments on articles and discussions
+3. Subscribe to our newsletter
+4. Participate in community discussions
+
+We welcome you to the GABLVM community!";
+  }
+
+  // Join multiple role descriptions with clear separator.
+  return implode("\n\n\n", $descriptions);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for user entities.
+ *
+ * Detects role changes and sends notification email to user.
+ */
+function gablvm_core_user_presave(UserInterface $account) {
+  // Only process existing users (not new accounts).
+  if ($account->isNew()) {
+    return;
+  }
+
+  // Get original roles before the change.
+  $original = $account->original;
+  if (!$original) {
+    return;
+  }
+
+  $old_roles = $original->getRoles(TRUE);
+  $new_roles = $account->getRoles(TRUE);
+
+  // Check if roles have changed.
+  $added_roles = array_diff($new_roles, $old_roles);
+  $removed_roles = array_diff($old_roles, $new_roles);
+
+  if (!empty($added_roles) || !empty($removed_roles)) {
+    // Store role change info for hook_user_update to send email.
+    $account->_gablvm_role_change = [
+      'added' => $added_roles,
+      'removed' => $removed_roles,
+      'old_roles' => $old_roles,
+      'new_roles' => $new_roles,
+    ];
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for user entities.
+ *
+ * Sends email notification when user roles are changed.
+ */
+function gablvm_core_user_update(UserInterface $account) {
+  // Check if we have role change info from presave.
+  if (empty($account->_gablvm_role_change)) {
+    return;
+  }
+
+  $change = $account->_gablvm_role_change;
+
+  // Don't send email if user has no email address.
+  if (!$account->getEmail()) {
+    return;
+  }
+
+  // Build and send the role change notification email.
+  _gablvm_core_send_role_change_email($account, $change);
+}
+
+/**
+ * Sends role change notification email to user.
+ *
+ * @param \Drupal\user\UserInterface $account
+ *   The user account.
+ * @param array $change
+ *   Array with 'added', 'removed', 'old_roles', 'new_roles' keys.
+ */
+function _gablvm_core_send_role_change_email(UserInterface $account, array $change) {
+  $mailManager = \Drupal::service('plugin.manager.mail');
+  $langcode = $account->getPreferredLangcode();
+  $site_config = \Drupal::config('system.site');
+
+  // Build role labels for added/removed.
+  $added_labels = [];
+  $removed_labels = [];
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+
+  foreach ($change['added'] as $role_id) {
+    $role = $role_storage->load($role_id);
+    if ($role) {
+      $added_labels[] = $role->label();
+    }
+  }
+
+  foreach ($change['removed'] as $role_id) {
+    $role = $role_storage->load($role_id);
+    if ($role) {
+      $removed_labels[] = $role->label();
+    }
+  }
+
+  // Build the email content.
+  $params = [
+    'account' => $account,
+    'added_roles' => $added_labels,
+    'removed_roles' => $removed_labels,
+    'site_name' => $site_config->get('name'),
+  ];
+
+  // Send the email.
+  $result = $mailManager->mail('gablvm_core', 'role_change', $account->getEmail(), $langcode, $params, NULL, TRUE);
+
+  if ($result['result'] === TRUE) {
+    \Drupal::logger('gablvm_core')->info('Role change notification sent to @user.', [
+      '@user' => $account->getDisplayName(),
+    ]);
+  }
+  else {
+    \Drupal::logger('gablvm_core')->error('Failed to send role change notification to @user.', [
+      '@user' => $account->getDisplayName(),
+    ]);
+  }
+}
+
+/**
+ * Implements hook_mail().
+ *
+ * Prepares role change notification emails.
+ */
+function gablvm_core_mail($key, &$message, $params) {
+  // General-purpose emails (subject and body passed directly).
+  if ($key === 'general') {
+    $message['subject'] = $params['subject'] ?? '';
+    $message['body'][] = $params['body'] ?? '';
+    return;
+  }
+
+  if ($key !== 'role_change') {
+    return;
+  }
+
+  $account = $params['account'];
+  $added_roles = $params['added_roles'];
+  $removed_roles = $params['removed_roles'];
+  $site_name = $params['site_name'];
+
+  // Build subject line.
+  $message['subject'] = t('Your account roles have been updated at @site', [
+    '@site' => $site_name,
+  ]);
+
+  // Build the email body.
+  $body = [];
+  $body[] = t('Assalamu Alaikum @name,', ['@name' => $account->getDisplayName()]);
+  $body[] = '';
+  $body[] = t('Your account at @site has been updated with new role assignments.', ['@site' => $site_name]);
+  $body[] = '';
+
+  // Show added roles.
+  if (!empty($added_roles)) {
+    $body[] = 'ROLES ADDED';
+    $body[] = '';
+    foreach ($added_roles as $index => $role) {
+      $body[] = ($index + 1) . '. ' . $role;
+    }
+    $body[] = '';
+  }
+
+  // Show removed roles.
+  if (!empty($removed_roles)) {
+    $body[] = 'ROLES REMOVED';
+    $body[] = '';
+    foreach ($removed_roles as $index => $role) {
+      $body[] = ($index + 1) . '. ' . $role;
+    }
+    $body[] = '';
+  }
+
+  // Show current roles with descriptions.
+  $body[] = '';
+  $body[] = 'YOUR CURRENT ROLES AND PERMISSIONS';
+  $body[] = '';
+  $body[] = _gablvm_core_get_auto_role_description($account);
+  $body[] = '';
+  $body[] = '';
+  $body[] = t('If you have any questions about your new permissions, please contact us through our website.');
+  $body[] = '';
+  $body[] = t('Jazakallahu Khairan,');
+  $body[] = t('The @site Team', ['@site' => $site_name]);
+  $body[] = '';
+  $body[] = 'Global Advocacy of Blind and Low Vision Muslims (GABLVM)';
+  $body[] = 'https://gablvm.org';
+
+  $message['body'] = $body;
+}
+
+/**
+ * Auto-generates role description based on actual permissions.
+ *
+ * This function dynamically reads permissions from the role and creates
+ * a human-readable description. Works with any role, including new ones.
+ *
+ * @param \Drupal\user\UserInterface $account
+ *   The user account.
+ *
+ * @return string
+ *   The formatted role description(s).
+ */
+function _gablvm_core_get_auto_role_description(UserInterface $account) {
+  $roles = $account->getRoles(TRUE);
+  $descriptions = [];
+  $role_storage = \Drupal::entityTypeManager()->getStorage('user_role');
+
+  // Permission categories for grouping (human-readable).
+  $permission_categories = [
+    'content_create' => [
+      'label' => 'Content Creation',
+      'patterns' => ['create .* content'],
+    ],
+    'content_edit' => [
+      'label' => 'Content Editing',
+      'patterns' => ['edit .* content', 'edit own .* content', 'edit any .* content'],
+    ],
+    'content_delete' => [
+      'label' => 'Content Deletion',
+      'patterns' => ['delete .* content', 'delete own .* content', 'delete any .* content'],
+    ],
+    'content_moderate' => [
+      'label' => 'Content Moderation',
+      'patterns' => ['use editorial transition', 'view any unpublished', 'view own unpublished', 'view latest version'],
+    ],
+    'admin_access' => [
+      'label' => 'Administrative Access',
+      'patterns' => ['access administration', 'access toolbar', 'access content overview', 'administer'],
+    ],
+    'user_manage' => [
+      'label' => 'User Management',
+      'patterns' => ['administer users', 'administer permissions', 'assign .* role'],
+    ],
+    'media_files' => [
+      'label' => 'Media and Files',
+      'patterns' => ['access files', 'create media', 'edit media', 'delete media', 'view media'],
+    ],
+    'comments' => [
+      'label' => 'Comments',
+      'patterns' => ['post comments', 'access comments', 'administer comments', 'edit own comments'],
+    ],
+    'taxonomy' => [
+      'label' => 'Categories and Tags',
+      'patterns' => ['create terms', 'edit terms', 'delete terms', 'administer taxonomy'],
+    ],
+  ];
+
+  // Human-readable permission translations.
+  $permission_labels = [
+    'access administration pages' => 'Access the administration area',
+    'access toolbar' => 'Use the administrative toolbar',
+    'access content overview' => 'View content overview',
+    'access content' => 'View published content',
+    'access comments' => 'View comments',
+    'post comments' => 'Post comments on content',
+    'skip comment approval' => 'Post comments without approval',
+    'edit own comments' => 'Edit your own comments',
+    'create article content' => 'Create Articles',
+    'create event content' => 'Create Events',
+    'create page content' => 'Create Pages',
+    'create resource content' => 'Create Resources',
+    'edit own article content' => 'Edit your own Articles',
+    'edit own event content' => 'Edit your own Events',
+    'edit own page content' => 'Edit your own Pages',
+    'edit own resource content' => 'Edit your own Resources',
+    'edit any article content' => 'Edit any Article',
+    'edit any event content' => 'Edit any Event',
+    'edit any page content' => 'Edit any Page',
+    'edit any resource content' => 'Edit any Resource',
+    'delete own article content' => 'Delete your own Articles',
+    'delete own event content' => 'Delete your own Events',
+    'delete any article content' => 'Delete any Article',
+    'delete any event content' => 'Delete any Event',
+    'use editorial transition create_new_draft' => 'Create drafts',
+    'use editorial transition publish' => 'Publish content',
+    'use editorial transition archive' => 'Archive content',
+    'use editorial transition archived_draft' => 'Restore archived content to draft',
+    'view own unpublished content' => 'View your own unpublished content',
+    'view any unpublished content' => 'View any unpublished content',
+    'view latest version' => 'View latest content revisions',
+    'view all revisions' => 'View all content revisions',
+    'revert all revisions' => 'Revert content to previous versions',
+    'administer nodes' => 'Full content administration',
+    'administer users' => 'Manage user accounts',
+    'administer permissions' => 'Manage roles and permissions',
+    'administer site configuration' => 'Configure site settings',
+    'administer modules' => 'Manage modules',
+    'administer url aliases' => 'Manage URL aliases',
+    'create url aliases' => 'Create URL aliases',
+    'access files overview' => 'View files overview',
+    'delete own files' => 'Delete your own uploaded files',
+    'view media' => 'View media items',
+    'create terms in tags' => 'Create new tags',
+    'edit terms in tags' => 'Edit existing tags',
+    'delete terms in tags' => 'Delete tags',
+    'subscribe to newsletters' => 'Subscribe to newsletters',
+    'access site-wide contact form' => 'Use the contact form',
+    'search content' => 'Search the site',
+    'access shortcuts' => 'Use keyboard shortcuts',
+    'cancel account' => 'Cancel your own account',
+  ];
+
+  foreach ($roles as $role_id) {
+    $role = $role_storage->load($role_id);
+    if (!$role) {
+      continue;
+    }
+
+    $role_label = $role->label();
+    $permissions = $role->getPermissions();
+
+    // Check if this is an admin role (has all permissions).
+    if ($role->isAdmin()) {
+      $descriptions[] = $role_label . " Role\n\n" .
+        "As an " . $role_label . ", you have full administrative access to the entire website. " .
+        "This includes all permissions and capabilities.\n\n" .
+        "Please use these elevated privileges responsibly.";
+      continue;
+    }
+
+    // Skip if no permissions.
+    if (empty($permissions)) {
+      continue;
+    }
+
+    // Build human-readable permission list.
+    $readable_permissions = [];
+    foreach ($permissions as $permission) {
+      if (isset($permission_labels[$permission])) {
+        $readable_permissions[] = $permission_labels[$permission];
+      }
+      else {
+        // Generate a readable version from the permission machine name.
+        $readable = ucfirst(str_replace(['_', 'administer '], [' ', 'Manage '], $permission));
+        $readable_permissions[] = $readable;
+      }
+    }
+
+    // Remove duplicates and sort.
+    $readable_permissions = array_unique($readable_permissions);
+    sort($readable_permissions);
+
+    // Limit to most important permissions (max 10).
+    $display_permissions = array_slice($readable_permissions, 0, 10);
+
+    // Build the description.
+    $section = $role_label . " Role\n\n";
+    $section .= "As a " . $role_label . ", your capabilities include:\n\n";
+
+    foreach ($display_permissions as $index => $perm) {
+      $section .= ($index + 1) . ". " . $perm . "\n";
+    }
+
+    if (count($readable_permissions) > 10) {
+      $section .= "\nPlus " . (count($readable_permissions) - 10) . " additional permissions.";
+    }
+
+    $descriptions[] = $section;
+  }
+
+  if (empty($descriptions)) {
+    return "Authenticated Member Role\n\n" .
+      "As a registered member, you can:\n\n" .
+      "1. View published content\n" .
+      "2. Post comments\n" .
+      "3. Subscribe to newsletters\n" .
+      "4. Use the contact form\n\n" .
+      "We welcome you to the GABLVM community!";
+  }
+
+  return implode("\n\n\n", $descriptions);
+}
+
+/**
+ * Implements hook_cron().
+ *
+ * Two-phase event status transitions:
+ * 1. Upcoming → Ongoing: when the event's start time has arrived.
+ * 2. Ongoing → Past: at 11 PM site timezone on the event's date.
+ */
+function gablvm_core_cron() {
+  // Look up taxonomy term IDs for event_status vocabulary by name.
+  $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $status_map = [];
+  foreach (['Upcoming', 'Ongoing', 'Past'] as $name) {
+    $terms = $term_storage->loadByProperties(['vid' => 'event_status', 'name' => $name]);
+    $term = reset($terms);
+    if ($term) {
+      $status_map[$name] = (int) $term->id();
+    }
+  }
+  if (count($status_map) !== 3) {
+    return;
+  }
+  $tid_upcoming = $status_map['Upcoming'];
+  $tid_ongoing = $status_map['Ongoing'];
+  $tid_past = $status_map['Past'];
+
+  // Server timezone is America/Toronto (EDT/EST). Audit finding 2026-05-17.
+  $site_tz_name = \Drupal::config('system.date')->get('timezone.default') ?: 'America/Toronto';
+  $site_tz = new \DateTimeZone($site_tz_name);
+  $utc = new \DateTimeZone('UTC');
+  $now_utc = new \DateTime('now', $utc);
+  $now_utc_str = $now_utc->format('Y-m-d\TH:i:s');
+
+  // Phase 1: Upcoming → Ongoing (event start time has arrived).
+  $upcoming_nids = \Drupal::entityQuery('node')
+    ->condition('type', 'event')
+    ->condition('status', 1)
+    ->condition('field_event_status', $tid_upcoming)
+    ->condition('field_event_date', $now_utc_str, '<=')
+    ->accessCheck(FALSE)
+    ->execute();
+
+  if (!empty($upcoming_nids)) {
+    $nodes = \Drupal::entityTypeManager()->getStorage('node')->loadMultiple($upcoming_nids);
+    foreach ($nodes as $node) {
+      $node->set('field_event_status', ['target_id' => $tid_ongoing]);
+      $node->save();
+      \Drupal::logger('gablvm_core')->info('Event "@title" (nid @nid) transitioned from Upcoming to Ongoing.', [
+        '@title' => $node->getTitle(),
+        '@nid' => $node->id(),
+      ]);
+    }
+  }
+
+  // Phase 2: Ongoing → Past (11 PM CT on the event's day has passed).
+  // Skip events that were just transitioned to Ongoing in Phase 1 above,
+  // so they remain Ongoing for users to see until the 11 PM cutoff.
+  $ongoing_query = \Drupal::entityQuery('node')
+    ->condition('type', 'event')
+    ->condition('status', 1)
+    ->condition('field_event_status', $tid_ongoing)
+    ->accessCheck(FALSE);
+  if (!empty($upcoming_nids)) {
+    $ongoing_query->condition('nid', $upcoming_nids, 'NOT IN');
+  }
+  $ongoing_nids = $ongoing_query->execute();
+
+  if (!empty($ongoing_nids)) {
+    $now_local = new \DateTime('now', $site_tz);
+    $nodes = \Drupal::entityTypeManager()->getStorage('node')->loadMultiple($ongoing_nids);
+    foreach ($nodes as $node) {
+      $event_date_str = $node->get('field_event_date')->value;
+      if (empty($event_date_str)) {
+        continue;
+      }
+      // Event dates are stored in UTC; convert to site timezone to get the event's local day.
+      $event_date = new \DateTime($event_date_str, $utc);
+      $event_date->setTimezone($site_tz);
+      // Build the 11 PM site timezone cutoff for that day.
+      $cutoff = new \DateTime($event_date->format('Y-m-d') . ' 23:00:00', $site_tz);
+      if ($now_local > $cutoff) {
+        $node->set('field_event_status', ['target_id' => $tid_past]);
+        $node->save();
+        \Drupal::logger('gablvm_core')->info('Event "@title" (nid @nid) transitioned from Ongoing to Past (11 PM @tz cutoff).', [
+          '@title' => $node->getTitle(),
+          '@nid' => $node->id(),
+          '@tz' => $site_tz_name,
+        ]);
+      }
+    }
+  }
+
+  // Phase 3: YouTube livestream sync.
+  // Only runs if the YouTubeLiveService is available.
+  // Checks events with YouTube video IDs and syncs their status.
+  try {
+    /** @var \Drupal\gablvm_core\Service\YouTubeLiveService $youtube */
+    $youtube = \Drupal::service('gablvm_core.youtube_live');
+    $youtube->syncActiveEvents();
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('gablvm_core')->error('YouTube sync failed during cron: @msg', [
+      '@msg' => $e->getMessage(),
+    ]);
+  }
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_presave() for node entities.
+ *
+ * Auto-extracts YouTube video ID from the event link URL if the
+ * video ID field is empty. This saves admin time and reduces errors.
+ */
+function gablvm_core_node_presave($node) {
+  if ($node->bundle() !== 'event') {
+    return;
+  }
+
+  // If video ID is already set, skip.
+  $videoId = $node->get('field_youtube_video_id')->value;
+  if (!empty($videoId)) {
+    return;
+  }
+
+  // Try to extract from the event link. Guard against empty field — accessing
+  // ->uri on an empty FieldItemList triggers a PHP notice.
+  $linkField = $node->get('field_event_link');
+  $linkUri = $linkField->isEmpty() ? '' : ($linkField->uri ?? '');
+  if (empty($linkUri)) {
+    return;
+  }
+
+  $extracted = _gablvm_core_extract_youtube_id($linkUri);
+  if ($extracted) {
+    $node->set('field_youtube_video_id', $extracted);
+    \Drupal::logger('gablvm_core')->info('Auto-extracted YouTube ID "@id" from event "@title".', [
+      '@id' => $extracted,
+      '@title' => $node->getTitle(),
+    ]);
+  }
+}
+
+/**
+ * Extract YouTube video ID from a URL.
+ *
+ * Handles formats:
+ * - https://www.youtube.com/watch?v=VIDEO_ID
+ * - https://youtu.be/VIDEO_ID
+ * - https://www.youtube.com/live/VIDEO_ID
+ * - https://www.youtube.com/embed/VIDEO_ID
+ *
+ * @param string $url
+ *   The YouTube URL.
+ *
+ * @return string|null
+ *   The video ID, or NULL if not a YouTube URL.
+ */
+function _gablvm_core_extract_youtube_id(string $url): ?string {
+  $patterns = [
+    '/youtube\.com\/watch\?v=([a-zA-Z0-9_-]{11})/',
+    '/youtu\.be\/([a-zA-Z0-9_-]{11})/',
+    '/youtube\.com\/live\/([a-zA-Z0-9_-]{11})/',
+    '/youtube\.com\/embed\/([a-zA-Z0-9_-]{11})/',
+  ];
+
+  foreach ($patterns as $pattern) {
+    if (preg_match($pattern, $url, $matches)) {
+      return $matches[1];
+    }
+  }
+
+  return NULL;
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_insert() for node entities.
+ *
+ * Purges Cloudflare edge cache when new content is created.
+ */
+function gablvm_core_node_insert($node) {
+  _gablvm_core_purge_cloudflare_cache($node);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_update() for node entities.
+ *
+ * Purges Cloudflare edge cache when content is updated.
+ */
+function gablvm_core_node_update($node) {
+  _gablvm_core_purge_cloudflare_cache($node);
+}
+
+/**
+ * Implements hook_ENTITY_TYPE_delete() for node entities.
+ *
+ * Purges Cloudflare edge cache when content is deleted.
+ */
+function gablvm_core_node_delete($node) {
+  _gablvm_core_purge_cloudflare_cache($node);
+}
+
+/**
+ * Collects URLs for Cloudflare cache purge during the current request.
+ *
+ * Called automatically when content is created, updated, or deleted.
+ * URLs are batched and sent in a single API call at PHP shutdown via
+ * _gablvm_core_flush_cloudflare_purge(). This ensures that cron runs
+ * transitioning multiple events purge all affected URLs, not just the first.
+ *
+ * @param \Drupal\node\NodeInterface|null $node
+ *   The node being saved, or NULL for a full purge.
+ */
+function _gablvm_core_purge_cloudflare_cache($node = NULL) {
+  $urls = &drupal_static(__FUNCTION__ . '_urls', []);
+  $registered = &drupal_static(__FUNCTION__ . '_registered', FALSE);
+
+  // Register the shutdown function once per request to flush all collected URLs.
+  if (!$registered) {
+    $registered = TRUE;
+    drupal_register_shutdown_function('_gablvm_core_flush_cloudflare_purge');
+  }
+
+  if ($node && $node instanceof \Drupal\node\NodeInterface) {
+    $base_url = \Drupal::request()->getSchemeAndHttpHost();
+
+    // Always purge the front page.
+    $urls[] = $base_url . '/';
+
+    // Purge the node's canonical URL.
+    try {
+      $urls[] = $node->toUrl('canonical', ['absolute' => TRUE])->toString();
+    }
+    catch (\Exception $e) {
+      // Node may not have a canonical URL (e.g., during delete).
+    }
+
+    // Purge the content type's listing page.
+    $listing_map = [
+      'article' => '/blog',
+      'event' => '/events',
+      'resource' => '/resources',
+    ];
+    $bundle = $node->bundle();
+    if (isset($listing_map[$bundle])) {
+      $urls[] = $base_url . $listing_map[$bundle];
+    }
+  }
+  else {
+    // No node context: mark for full purge.
+    $urls[] = '__purge_everything__';
+  }
+}
+
+/**
+ * Shutdown function: sends a single batched Cloudflare cache purge.
+ *
+ * Collects all URLs queued by _gablvm_core_purge_cloudflare_cache()
+ * during the request and purges them in one API call (max 30 URLs).
+ */
+function _gablvm_core_flush_cloudflare_purge() {
+  $urls = &drupal_static('_gablvm_core_purge_cloudflare_cache_urls', []);
+
+  if (empty($urls)) {
+    return;
+  }
+
+  $config = \Drupal::config('gablvm_core.settings');
+  $zone_id = getenv('GABLVM_CF_ZONE_ID') ?: $config->get('cloudflare.zone_id');
+  $api_key = getenv('GABLVM_CF_API_KEY') ?: $config->get('cloudflare.api_key');
+  $email = getenv('GABLVM_CF_EMAIL') ?: $config->get('cloudflare.email');
+
+  if (empty($zone_id) || empty($api_key) || empty($email)) {
+    return;
+  }
+
+  // Check if a full purge was requested.
+  if (in_array('__purge_everything__', $urls, TRUE)) {
+    $payload = ['purge_everything' => TRUE];
+  }
+  else {
+    // Deduplicate and limit to 30 URLs (Cloudflare API limit).
+    $urls = array_unique($urls);
+    $urls = array_slice($urls, 0, 30);
+    $payload = ['files' => array_values($urls)];
+
+    \Drupal::logger('gablvm_core')->info('Cloudflare batched cache purge for @count URLs: @urls', [
+      '@count' => count($urls),
+      '@urls' => implode(', ', $urls),
+    ]);
+  }
+
+  try {
+    $client = \Drupal::httpClient();
+    $response = $client->post("https://api.cloudflare.com/client/v4/zones/{$zone_id}/purge_cache", [
+      'headers' => [
+        'X-Auth-Email' => $email,
+        'X-Auth-Key' => $api_key,
+        'Content-Type' => 'application/json',
+      ],
+      'json' => $payload,
+      'timeout' => 5,
+    ]);
+
+    $result = json_decode($response->getBody(), TRUE);
+    if (!empty($result['success'])) {
+      \Drupal::logger('gablvm_core')->info('Cloudflare cache purged successfully.');
+    }
+    else {
+      \Drupal::logger('gablvm_core')->warning('Cloudflare cache purge returned unexpected response.');
+    }
+  }
+  catch (\Exception $e) {
+    \Drupal::logger('gablvm_core')->error('Cloudflare cache purge failed: @message', [
+      '@message' => $e->getMessage(),
+    ]);
+  }
+}
+
+/**
+ * Implements hook_theme().
+ */
+/**
+ * Implements hook_system_breadcrumb_alter().
+ *
+ * Add "Blog" breadcrumb link on article pages so the trail reads:
+ * Home > Blog > [Article Title]
+ */
+function gablvm_core_system_breadcrumb_alter(Breadcrumb &$breadcrumb, RouteMatchInterface $route_match, array $context) {
+  $node = $route_match->getParameter('node');
+  if (!$node || !$node instanceof \Drupal\node\NodeInterface) {
+    return;
+  }
+
+  $links = $breadcrumb->getLinks();
+  $breadcrumb = new Breadcrumb();
+
+  // Re-add existing links (Home, etc.).
+  foreach ($links as $link) {
+    $breadcrumb->addLink($link);
+  }
+
+  // Add parent listing link based on content type.
+  $bundle = $node->bundle();
+  $parentRoutes = [
+    'article' => ['route' => 'view.blog.page_1', 'label' => 'Blog'],
+    'event' => ['route' => 'view.events.page_1', 'label' => 'Events'],
+    'resource' => ['route' => 'view.resources.page_1', 'label' => 'Resources'],
+  ];
+
+  if (isset($parentRoutes[$bundle])) {
+    $parent = $parentRoutes[$bundle];
+    try {
+      $breadcrumb->addLink(Link::createFromRoute(t($parent['label']), $parent['route']));
+    }
+    catch (\Exception $e) {
+      // Route doesn't exist — skip the parent link.
+    }
+  }
+
+  // Add the current page title as the last item (no link — current page).
+  $breadcrumb->addLink(Link::createFromRoute($node->getTitle(), '<none>'));
+
+  $breadcrumb->addCacheContexts(['route']);
+  $breadcrumb->addCacheTags(['node_list']);
+}
+
+/**
+ * Implements hook_page_attachments_alter().
+ *
+ * Attach the Listen Aloud library to article pages.
+ */
+function gablvm_core_page_attachments_alter(array &$attachments) {
+  $route_match = \Drupal::routeMatch();
+  $node = $route_match->getParameter('node');
+  if ($node && $node instanceof \Drupal\node\NodeInterface && $node->bundle() === 'article') {
+    $attachments['#attached']['library'][] = 'gablvm_core/listen_aloud';
+  }
+}
+
+function gablvm_core_theme() {
+  return [
+    'gablvm_quran_player' => [
+      'variables' => [
+        'surahs' => [],
+        'reciters' => [],
+        'chapter_reciters' => [],
+        'translations' => [],
+        'current_surah' => 1,
+        'current_reciter' => NULL,
+        'current_translation' => NULL,
+        'greeting_message' => '',
+        'show_translation' => TRUE,
+        'show_translation_text' => TRUE,
+        'qf_connected' => FALSE,
+        'qf_account_url' => '/quran/my-account',
+        'qf_login_url' => '/oauth/quran-foundation/login?destination=/quran-listen',
+        'qf_csrf_token' => '',
+        'reciter_preselected' => FALSE,
+        'english_on' => FALSE,
+      ],
+      'template' => 'gablvm-quran-player',
+    ],
+    'gablvm_prayer_times' => [
+      'variables' => [
+        'greeting_message' => '',
+        'times' => [],
+        'location' => '',
+        'date' => '',
+        'hijri_date' => '',
+        'calculation_method' => '',
+        'next_prayer' => NULL,
+        'methods' => [],
+        'schools' => [],
+        'current_method' => 2,
+        'current_school' => 0,
+        'current_lat' => NULL,
+        'current_lng' => NULL,
+        'current_city' => 'New York',
+        'current_country' => 'United States',
+        'showing_tomorrow' => FALSE,
+        'is_ramadan' => FALSE,
+      ],
+      'template' => 'gablvm-prayer-times',
+    ],
+    'gablvm_hijri_calendar' => [
+      'variables' => [
+        'current_date' => [],
+        'gregorian_date' => '',
+        'calendar_days' => [],
+        'events' => [],
+        'all_events' => [],
+        'months' => [],
+        'years' => [],
+        'gregorian_years' => [],
+        'calendar_methods' => [],
+        'selected_month' => NULL,
+        'selected_year' => NULL,
+        'selected_gregorian_year' => NULL,
+        'selected_calendar_method' => NULL,
+        'selected_month_name' => '',
+      ],
+      'template' => 'gablvm-hijri-calendar',
+    ],
+    'gablvm_language_selector' => [
+      'variables' => [
+        'languages' => [],
+      ],
+      'template' => 'gablvm-language-selector',
+    ],
+    'gablvm_newsletter_page' => [
+      'variables' => [
+        'subscription_form' => NULL,
+        'recent_issues' => [],
+      ],
+      'template' => 'gablvm-newsletter-page',
+    ],
+    'gablvm_islamic_tools' => [
+      'variables' => [
+        'tools' => [],
+      ],
+      'template' => 'gablvm-islamic-tools',
+    ],
+    'gablvm_qibla_finder' => [
+      'variables' => [
+        'kaaba_lat' => 21.4225,
+        'kaaba_lng' => 39.8262,
+      ],
+      'template' => 'gablvm-qibla-finder',
+    ],
+    'gablvm_quran_tafsir_lab' => [
+      'variables' => [
+        'surahs' => [],
+        'tafsir_resources' => [],
+        'current_surah' => 1,
+        'current_surah_name' => '',
+        'current_tafsir_id' => 168,
+        'current_tafsir_name' => '',
+        'current_page' => 1,
+        'total_pages' => 1,
+        'total_verses' => 0,
+        'verses_with_tafsir' => 0,
+        'coverage_partial' => FALSE,
+        'verses' => [],
+        'groups' => [],
+        'error' => NULL,
+        'debug_mode' => FALSE,
+      ],
+      'template' => 'gablvm-quran-tafsir-lab',
+    ],
+    'gablvm_quran_account' => [
+      'variables' => [
+        'connected' => FALSE,
+        'connect_url' => '',
+        'disconnect_url' => '',
+        'bookmarks' => [],
+        'recent' => [],
+        'streak_days' => 0,
+        'streak_status' => '',
+        'notes' => [],
+        'notes_needs_reconnect' => FALSE,
+        'todays_plan' => NULL,
+        'todays_activity' => NULL,
+        'surahs' => [],
+        'csrf_token' => '',
+      ],
+      'template' => 'gablvm-quran-account',
+    ],
+  ];
+}
+
+/**
+ * Implements hook_views_query_alter().
+ *
+ * Reorders event status sort so Ongoing events appear first:
+ * Ongoing (tid 2) → Upcoming (tid 1) → Past (tid 3).
+ */
+function gablvm_core_views_query_alter(ViewExecutable $view, QueryPluginBase $query) {
+  if ($view->id() !== 'events') {
+    return;
+  }
+
+  // Look up taxonomy term IDs dynamically to avoid hardcoding.
+  $term_storage = \Drupal::entityTypeManager()->getStorage('taxonomy_term');
+  $status_tids = [];
+  foreach (['Live', 'Ongoing', 'Upcoming', 'Past', 'Concluded'] as $name) {
+    $terms = $term_storage->loadByProperties(['vid' => 'event_status', 'name' => $name]);
+    $term = reset($terms);
+    if ($term) {
+      $status_tids[$name] = (int) $term->id();
+    }
+  }
+  // Require at least the core three statuses.
+  if (!isset($status_tids['Ongoing'], $status_tids['Upcoming'], $status_tids['Past'])) {
+    return;
+  }
+
+  $tid_ongoing = $status_tids['Ongoing'];
+  $tid_upcoming = $status_tids['Upcoming'];
+  $tid_past = $status_tids['Past'];
+
+  // Ensure field tables are joined even when a user clicks a different column
+  // header to sort (e.g. ?order=title). Without this, the CASE expressions
+  // below reference columns that don't exist in the query, causing SQL errors.
+  $status_alias = $query->ensureTable('node__field_event_status');
+  $date_alias_tbl = $query->ensureTable('node__field_event_date');
+  if (!$status_alias || !$date_alias_tbl) {
+    return;
+  }
+
+  // Add a CASE expression to control status display order.
+  // Live events sort first (weight -1), then Ongoing, Upcoming, Past, Concluded.
+  $case_parts = ["{$tid_ongoing} THEN 0", "{$tid_upcoming} THEN 1", "{$tid_past} THEN 2"];
+  if (isset($status_tids['Live'])) {
+    array_unshift($case_parts, "{$status_tids['Live']} THEN -1");
+  }
+  if (isset($status_tids['Concluded'])) {
+    $case_parts[] = "{$status_tids['Concluded']} THEN 3";
+  }
+  $when_clauses = implode(' WHEN ', $case_parts);
+  $expression = "CASE {$status_alias}.field_event_status_target_id WHEN {$when_clauses} ELSE 99 END";
+  $alias = $query->addField(NULL, $expression, 'status_weight');
+
+  // Remove the default status sort and replace with our custom weight.
+  foreach ($query->orderby as $key => $orderby) {
+    if (isset($orderby['field']) && strpos($orderby['field'], 'field_event_status_target_id') !== FALSE) {
+      $query->orderby[$key]['field'] = $alias;
+      break;
+    }
+  }
+
+  // Sort date within groups: Upcoming/Ongoing/Live ASC (soonest first),
+  // Past/Concluded DESC (most recent first).
+  $past_tids = [$tid_past];
+  if (isset($status_tids['Concluded'])) {
+    $past_tids[] = $status_tids['Concluded'];
+  }
+  $past_in = implode(',', $past_tids);
+  $date_sort = "CASE WHEN {$status_alias}.field_event_status_target_id IN ({$past_in}) THEN -UNIX_TIMESTAMP({$date_alias_tbl}.field_event_date_value) ELSE UNIX_TIMESTAMP({$date_alias_tbl}.field_event_date_value) END";
+  $date_alias = $query->addField(NULL, $date_sort, 'date_weight');
+
+  // Replace the default date sort with our conditional sort.
+  foreach ($query->orderby as $key => $orderby) {
+    if (isset($orderby['field']) && strpos($orderby['field'], 'field_event_date') !== FALSE) {
+      $query->orderby[$key]['field'] = $date_alias;
+      $query->orderby[$key]['direction'] = 'ASC';
+      break;
+    }
+  }
+}
+
+/**
+ * Implements hook_preprocess_views_view_table().
+ *
+ * Customizes status group headings on the events view for accessibility:
+ * strips the field label prefix, appends " Events", and wraps in <h2>.
+ */
+function gablvm_core_preprocess_views_view_table(&$variables) {
+  $view = $variables['view'];
+  if ($view->id() !== 'events') {
+    return;
+  }
+
+  if (!empty($variables['title'])) {
+    $title = trim((string) $variables['title']);
+    // Strip the "Status: " label prefix added by the rendered field.
+    if (strpos($title, 'Status:') === 0) {
+      $title = trim(substr($title, 7));
+    }
+    // Append " Events" if not already present.
+    if (strpos($title, ' Events') === FALSE) {
+      $title .= ' Events';
+    }
+    // Set clean title text — the template renders it as <h2> before the table.
+    $variables['title'] = $title;
+    // Clear caption so the heading doesn't also appear inside the table.
+    $variables['caption'] = '';
+    $variables['caption_needed'] = FALSE;
+  }
+}
+
+
+/**
+ * Validation handler for contact form.
+ *
+ * Subject is required only if no category is selected. Also prepends the
+ * category label to the subject during validation so it is available to
+ * the default submit/save handler that sends the email.
+ */
+function _gablvm_core_contact_form_validate(&$form, FormStateInterface $form_state) {
+  $category = $form_state->getValue('category');
+  $subject = trim($form_state->getValue(['subject', 0, 'value']) ?? '');
+
+  if (empty($category) && empty($subject)) {
+    $form_state->setErrorByName('subject', t('Please select a category or enter a subject.'));
+    return;
+  }
+
+  // Prepend the category label to the subject here (during validation)
+  // so it is part of the entity when Drupal's default submit handler
+  // saves and sends the email.
+  if ($category) {
+    $labels = [
+      'general' => 'General Inquiry',
+      'accessibility' => 'Accessibility',
+      'feedback' => 'Feedback',
+      'bug_report' => 'Bug Report',
+      'support' => 'Support Request',
+      'partnership' => 'Partnership',
+      'other' => 'Other',
+    ];
+    $label = $labels[$category] ?? $category;
+
+    if ($subject) {
+      $form_state->setValue(['subject', 0, 'value'], "[$label] $subject");
+    }
+    else {
+      $form_state->setValue(['subject', 0, 'value'], $label);
+    }
+  }
+}
+
+/**
+ * Implements hook_form_FORM_ID_alter() for simplenews_subscriber_validate.
+ *
+ * Upstream simplenews redirects anonymous submitters to /user/{uid}/simplenews
+ * when the email matches an existing user account. That route requires login,
+ * so anonymous visitors hit 403 and the "Please log in" status message is lost
+ * behind the access-denied page. We replace the submit handler so a tokenized
+ * management link is emailed to the address regardless of any user-account
+ * association, which is what the form's success message already promises.
+ */
+function gablvm_core_form_simplenews_subscriber_validate_alter(array &$form, \Drupal\Core\Form\FormStateInterface $form_state, $form_id) {
+  if (isset($form['actions']['submit'])) {
+    $form['actions']['submit']['#submit'] = ['gablvm_core_simplenews_validate_submit'];
+  }
+}
+
+/**
+ * Replacement submit handler for the simplenews validate (manage subscriptions) form.
+ */
+function gablvm_core_simplenews_validate_submit(array &$form, \Drupal\Core\Form\FormStateInterface $form_state) {
+  $mail = trim($form_state->getValue('mail'));
+  $subscriber = \Drupal\simplenews\Entity\Subscriber::loadByMail($mail);
+  if ($subscriber && $subscriber->isActive()) {
+    $mailer = \Drupal::service('simplenews.mailer');
+    $mail_manager = \Drupal::service('plugin.manager.mail');
+    $params = [
+      'from' => $mailer->getFrom(),
+      'context' => ['simplenews_subscriber' => $subscriber],
+    ];
+    $mail_manager->mail('simplenews', 'validate', $subscriber->getMail(), $subscriber->getLangcode(), $params, $params['from']['address']);
+  }
+  // Always show the same message regardless of whether the email exists,
+  // so the form does not disclose subscriber existence.
+  \Drupal::messenger()->addStatus(t('If %mail is subscribed, an email will be sent with a link to manage your subscriptions.', ['%mail' => $mail]));
+  $form_state->setRedirect('<front>');
+}
+
+/**
+ * Implements hook_mail_alter().
+ *
+ * Inject Reply-To: support@gablvm.org on every outbound Drupal email that
+ * does not already specify a Reply-To. Mirrors the gablvm-mail wrapper so
+ * users who hit Reply on a transactional or newsletter message reach a
+ * human, even though the From address (noreply@, newsletter@, security@)
+ * is unmonitored. Apple/Stripe/Anthropic pattern.
+ */
+function gablvm_core_mail_alter(&$message) {
+  if (!empty($message['headers']['Reply-To'])) {
+    return;
+  }
+  $message['headers']['Reply-To'] = 'support@gablvm.org';
+}

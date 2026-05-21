@@ -1,0 +1,30 @@
+quran_api:
+  api_mode: 'public'
+  client_id: ''
+  client_secret: ''
+  default_reciter: 7
+  default_translation: 85
+prayer_times:
+  calculation_method: 2
+  school: 0
+features:
+  quran_player_enabled: true
+  prayer_times_enabled: true
+  hijri_calendar_enabled: true
+  show_translation_text: true
+cloudflare:
+  zone_id: ''
+  api_key: ''
+  email: ''
+hijri_calendar:
+  date_overrides: ''
+quran_player:
+  embedded_bismillah_reciters: '13,19,158,159,160,173,175'
+  verse_reciter_map: '1:1,2:2,3:3,4:4,5:5,6:6,7:7,9:9,10:10,12:12,161:7,168:7,174:7'
+cyberpanel_email:
+  api_key: ''
+  from_address: 'noreply@gablvm.org'
+  from_name: 'GABLVM'
+display:
+  greeting_message: 'Welcome to the Quran Player. Select a Surah to begin.'
+  prayer_times_message: ''

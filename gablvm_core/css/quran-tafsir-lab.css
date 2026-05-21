@@ -1,0 +1,144 @@
+/**
+ * Quran Tafsir — scholarly commentary page.
+ *
+ * Uses the GABLVM manuscript design tokens (v2.0.2) defined in
+ * web/themes/custom/gablvm_theme/css/style.css. Do not introduce new
+ * colors or fonts — extend the token list first.
+ */
+
+.tafsir-intro {
+  background: var(--gablvm-green-light, #eef3ea);
+  border-left: 4px solid var(--gablvm-green, #1a5f2a);
+  padding: 0.9rem 1.1rem;
+  margin-bottom: 1.5rem;
+  border-radius: 4px;
+}
+
+.tafsir-intro p {
+  margin: 0;
+  color: var(--gablvm-text, #1a1a1a);
+  line-height: 1.6;
+}
+
+.tafsir-results .tafsir-page-summary {
+  margin: 0 0 1rem 0;
+  font-size: 0.95rem;
+  color: var(--gablvm-text-muted, #5b5548);
+}
+
+.tafsir-coverage-note {
+  background: var(--gablvm-green-light, #eef3ea);
+  border-left: 4px solid var(--gablvm-gold, #a67c2b);
+  padding: 0.75rem 1rem;
+  margin: 0 0 1.25rem 0;
+  color: var(--gablvm-text, #1a1a1a);
+  line-height: 1.55;
+  font-size: 0.95rem;
+  border-radius: 4px;
+}
+
+.tafsir-verse-missing {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  background: var(--gablvm-bg, #faf7f0);
+  border-left: 3px solid var(--gablvm-border, #e8e2d1);
+  color: var(--gablvm-text-muted, #5b5548);
+  font-style: italic;
+  line-height: 1.55;
+  border-radius: 4px;
+}
+
+.tafsir-verse-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+}
+
+.tafsir-verse {
+  border: 1px solid var(--gablvm-border, #e8e2d1);
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  margin-bottom: 1rem;
+  background: var(--gablvm-surface, #ffffff);
+}
+
+.tafsir-verse-heading {
+  margin: 0 0 0.75rem 0;
+  font-size: 1.125rem;
+  color: var(--gablvm-green-dark, #0f3d1a);
+  border-bottom: 1px solid var(--gablvm-border, #e8e2d1);
+  padding-bottom: 0.4rem;
+}
+
+.tafsir-verse-arabic {
+  font-size: 1.55rem;
+  line-height: 2.2;
+  margin: 0 0 1rem 0;
+  color: var(--gablvm-green-dark, #0f3d1a);
+  font-family: 'Amiri', 'Scheherazade New', 'Traditional Arabic', serif;
+}
+
+.tafsir-verse-commentary {
+  margin: 0;
+  line-height: 1.7;
+  color: var(--gablvm-text, #1a1a1a);
+}
+
+.tafsir-verse-commentary p {
+  margin: 0 0 0.8rem 0;
+}
+
+.tafsir-verse-commentary p:last-child {
+  margin-bottom: 0;
+}
+
+.tafsir-verse-commentary strong {
+  color: var(--gablvm-green-dark, #0f3d1a);
+}
+
+.tafsir-verse-commentary a {
+  color: var(--gablvm-green, #1a5f2a);
+  text-decoration: underline;
+}
+
+.tafsir-verse-commentary a:focus {
+  outline: 3px solid var(--gablvm-gold-bright, #c69a3e);
+  outline-offset: 2px;
+}
+
+.tafsir-error {
+  background: #fff5f5;
+  border: 1px solid #c92a2a;
+  border-radius: 8px;
+  padding: 1rem 1.25rem;
+  color: #5b1414;
+}
+
+.tafsir-pagination {
+  margin-top: 1.5rem;
+  padding-top: 1rem;
+  border-top: 1px solid var(--gablvm-border, #e8e2d1);
+}
+
+.tafsir-pagination-list {
+  list-style: none;
+  padding: 0;
+  margin: 0;
+  display: flex;
+  gap: 0.75rem;
+  flex-wrap: wrap;
+  align-items: center;
+  justify-content: center;
+}
+
+.tafsir-pagination-current {
+  font-size: 0.95rem;
+  color: var(--gablvm-text-muted, #5b5548);
+  padding: 0.5rem 0.75rem;
+}
+
+.tafsir-pagination a.quran-btn {
+  text-decoration: none;
+  display: inline-flex;
+  align-items: center;
+}

@@ -1,0 +1,105 @@
+/* GABLVM "Sign in with Quran.com" button on /user/login.
+ *
+ * Brand-aligned with the GABLVM illuminated-manuscript design system:
+ *   warm ivory bg #faf7f0, brand green #1a5f2a, gold-text #6e5119,
+ *   parchment border #e8e2d1.
+ * Sits ABOVE the email/password form. Clear primary affordance with a
+ * visible "or sign in with email" divider before the standard form below.
+ */
+
+.gablvm-qf-signin {
+  margin: 0 0 1.25rem;
+}
+
+.gablvm-qf-signin__btn {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 0.65rem;
+  width: 100%;
+  padding: 0.75rem 1rem;
+  background: #1a5f2a;
+  color: #faf7f0;
+  font-size: 1rem;
+  font-weight: 600;
+  text-decoration: none;
+  border: 2px solid #1a5f2a;
+  border-radius: 6px;
+  transition: background-color 120ms ease, border-color 120ms ease, transform 120ms ease;
+  -webkit-tap-highlight-color: transparent;
+}
+
+.gablvm-qf-signin__btn:hover,
+.gablvm-qf-signin__btn:focus {
+  background: #144822;
+  border-color: #144822;
+  color: #faf7f0;
+  text-decoration: none;
+}
+
+.gablvm-qf-signin__btn:focus {
+  outline: 3px solid #a67c2b;
+  outline-offset: 2px;
+}
+
+.gablvm-qf-signin__btn:active {
+  transform: translateY(1px);
+}
+
+.gablvm-qf-signin__icon {
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  width: 1.75rem;
+  height: 1.75rem;
+  background: #faf7f0;
+  color: #1a5f2a;
+  border-radius: 4px;
+  font-size: 0.85rem;
+  font-weight: 700;
+  letter-spacing: 0.02em;
+  flex-shrink: 0;
+}
+
+.gablvm-qf-signin__label {
+  flex: 1;
+  text-align: left;
+}
+
+.gablvm-qf-signin__divider {
+  position: relative;
+  display: flex;
+  align-items: center;
+  margin: 1.25rem 0 0;
+  text-align: center;
+  color: #6e5119;
+  font-size: 0.9rem;
+}
+
+.gablvm-qf-signin__divider::before,
+.gablvm-qf-signin__divider::after {
+  content: "" / "";
+  flex: 1;
+  height: 1px;
+  background: #e8e2d1;
+}
+
+.gablvm-qf-signin__divider-text {
+  padding: 0 0.85rem;
+  background: transparent;
+  white-space: nowrap;
+}
+
+/* Forced-colors / high-contrast mode: keep the button readable. */
+@media (forced-colors: active) {
+  .gablvm-qf-signin__btn {
+    border-color: ButtonText;
+    color: ButtonText;
+    background: ButtonFace;
+  }
+  .gablvm-qf-signin__icon {
+    border: 1px solid ButtonText;
+    background: ButtonFace;
+    color: ButtonText;
+  }
+}

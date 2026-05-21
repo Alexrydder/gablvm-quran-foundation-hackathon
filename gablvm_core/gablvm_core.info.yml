@@ -1,0 +1,11 @@
+name: 'GABLVM Core'
+type: module
+description: 'Essential Islamic features for the Global Advocacy of Blind and Low Vision Muslims - Quran Player, Prayer Times, and Hijri Calendar with full accessibility support.'
+core_version_requirement: ^10 || ^11
+version: "2.1.14"
+package: GABLVM
+configure: gablvm_core.settings
+
+dependencies:
+  - drupal:system (>=10.0)
+
