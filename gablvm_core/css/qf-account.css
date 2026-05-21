@@ -1,0 +1,103 @@
+/**
+ * Minimal layout for /quran/my-account dashboard. Inherits the
+ * site-wide design tokens via .quran-section in quran-player.css.
+ */
+
+.quran-account-page .quran-section {
+  margin-bottom: 1.5rem;
+}
+
+.quran-account-list {
+  list-style: none;
+  padding: 0;
+  margin: 0.5rem 0 0;
+}
+
+.quran-account-list li {
+  padding: 0.5rem 0;
+  border-bottom: 1px solid var(--color-border, #e8e2d1);
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  gap: 1rem;
+}
+
+.quran-account-list li:last-child {
+  border-bottom: none;
+}
+
+.quran-account-list a {
+  color: var(--color-link, #1a5f2a);
+}
+
+.quran-account-bookmark-remove {
+  font-size: 0.875rem;
+  padding: 0.25rem 0.75rem;
+}
+
+.quran-account-streak-active {
+  font-weight: 600;
+}
+
+/**
+ * Friendly fallback when an upstream Quran.com endpoint times out or
+ * 5xx-fails after retries. Distinct from the default empty-state copy
+ * (subtle background tint + gold-text per the brand palette).
+ */
+.quran-account-unavailable {
+  padding: 0.5rem 0.75rem;
+  background: var(--color-parchment-warm, #faf3df);
+  border-left: 3px solid var(--color-antique-gold, #a67c2b);
+  color: var(--color-gold-text, #6e5119);
+  font-style: italic;
+  margin: 0.5rem 0 0;
+}
+
+.quran-account-note-form .quran-form-row {
+  margin-bottom: 0.75rem;
+}
+
+.quran-account-note-form label {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-weight: 600;
+}
+
+.quran-account-note-form input,
+.quran-account-note-form select,
+.quran-account-note-form textarea {
+  width: 100%;
+  max-width: 32rem;
+  padding: 0.5rem;
+  font: inherit;
+}
+
+.quran-account-note-form textarea {
+  resize: vertical;
+}
+
+.quran-form-status {
+  margin-left: 0.75rem;
+  font-style: italic;
+}
+
+.quran-account-notes-list li {
+  display: block;
+}
+
+.quran-account-notes-list strong {
+  display: block;
+  margin-bottom: 0.25rem;
+  font-family: var(--font-mono, monospace);
+}
+
+.quran-account-reconnect {
+  padding: 0.75rem 1rem;
+  border-left: 4px solid #c08000;
+  background: #fff8e7;
+}
+
+.quran-account-disconnect {
+  margin-top: 2rem;
+  font-size: 0.875rem;
+}

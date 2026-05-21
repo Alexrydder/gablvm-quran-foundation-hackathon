@@ -1,0 +1,55 @@
+services:
+  gablvm_core.quran_api:
+    class: Drupal\gablvm_core\Service\QuranApiService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@cache.default'
+      - '@logger.factory'
+
+  gablvm_core.prayer_times:
+    class: Drupal\gablvm_core\Service\PrayerTimesService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@cache.default'
+      - '@logger.factory'
+
+  gablvm_core.hijri_calendar:
+    class: Drupal\gablvm_core\Service\HijriCalendarService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@cache.default'
+      - '@logger.factory'
+
+  gablvm_core.youtube_live:
+    class: Drupal\gablvm_core\Service\YouTubeLiveService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@logger.channel.default'
+
+  gablvm_core.cyberpanel_transport_factory:
+    class: Drupal\gablvm_core\Mailer\Transport\CyberPanelTransportFactory
+    arguments:
+      - '@http_client'
+      - '@event_dispatcher'
+      - '@logger.channel.default'
+    tags:
+      - { name: mailer.transport_factory }
+
+  gablvm_core.asset_cache_headers_subscriber:
+    class: Drupal\gablvm_core\EventSubscriber\AssetCacheHeadersSubscriber
+    tags:
+      - { name: event_subscriber }
+
+  gablvm_core.qf_oauth:
+    class: Drupal\gablvm_core\Service\QuranFoundationOauthService
+    arguments:
+      - '@http_client'
+      - '@config.factory'
+      - '@user.data'
+      - '@current_user'
+      - '@logger.factory'
+

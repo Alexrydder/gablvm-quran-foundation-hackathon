@@ -1,0 +1,191 @@
+{#
+/**
+ * @file
+ * Connected Quran.com account dashboard:
+ * bookmarks, streak, recent reading positions, notes form + list.
+ */
+#}
+<div class="quran-account-page">
+
+  {% if not connected %}
+    <section class="quran-section quran-account-disconnected">
+      <h2>{{ 'Your Quran.com account'|t }}</h2>
+      <p>{{ 'Connect your Quran.com account to sync your bookmarks, notes, reading streaks, and goals between gablvm.org and Quran.com.'|t }}</p>
+      <p>
+        <a class="quran-btn quran-btn-play" href="{{ connect_url }}">
+          {{ 'Connect your Quran.com account'|t }}
+        </a>
+      </p>
+    </section>
+
+  {% else %}
+
+    <header class="quran-section">
+      <h2>{{ 'Your Quran.com account'|t }}</h2>
+      <p>{{ 'Your Quran.com account is connected. Bookmarks, reading streaks, recent reading positions, and notes you make here sync with the Quran.com mobile and web apps.'|t }}</p>
+    </header>
+
+    {# ===== STREAK ===== #}
+    <section class="quran-section quran-account-streak" aria-labelledby="streak-heading">
+      <h3 id="streak-heading">{{ 'Reading streak'|t }}</h3>
+      {% if streak_unavailable %}
+        <p class="quran-account-unavailable">{{ 'Reading streak data is temporarily unavailable from Quran.com. Please try again in a few minutes.'|t }}</p>
+      {% elseif streak_days > 0 %}
+        {% if streak_status == 'ACTIVE' %}
+          <p class="quran-account-streak-active">
+            {{ 'You have a current reading streak of @n day@p.'|t({'@n': streak_days, '@p': streak_days == 1 ? '' : 's'}) }}
+          </p>
+        {% else %}
+          <p>
+            {{ 'Your most recent streak was @n day@p. Read today to start a new one.'|t({'@n': streak_days, '@p': streak_days == 1 ? '' : 's'}) }}
+          </p>
+        {% endif %}
+      {% else %}
+        <p>{{ 'No streak yet. Open the Quran Player and start a reading session. Your streak begins after your first day.'|t }}</p>
+      {% endif %}
+
+      {# ===== TODAY: real-time activity-day + goal-plan signals (added 2026-05-05 after Basit clarified the QF endpoint paths) ===== #}
+      <h4 id="today-heading">{{ "Today's reading"|t }}</h4>
+      {% if todays_activity_unavailable %}
+        <p class="quran-account-unavailable">{{ "Today's reading data is temporarily unavailable from Quran.com. Please try again in a few minutes."|t }}</p>
+      {% elseif todays_activity %}
+        <p>
+          {{ 'Logged today: @v verse@vp, @s second@sp.'|t({
+            '@v': todays_activity.verses_read,
+            '@vp': todays_activity.verses_read == 1 ? '' : 's',
+            '@s': todays_activity.seconds_read,
+            '@sp': todays_activity.seconds_read == 1 ? '' : 's',
+          }) }}
+          {{ 'Your reading is being tracked. The streak above updates at midnight UTC.'|t }}
+        </p>
+      {% else %}
+        <p>{{ "No reading logged today yet. Open the Quran Player and play a surah for at least 8 seconds. That triggers a session log."|t }}</p>
+      {% endif %}
+
+      {% if todays_plan_unavailable %}
+        <p class="quran-account-unavailable">{{ "Today's reading goal is temporarily unavailable from Quran.com. Please try again in a few minutes."|t }}</p>
+      {% elseif todays_plan %}
+        {% if todays_plan.hasGoal %}
+          <p>
+            {{ "Today's goal: @done of @target page@p read."|t({
+              '@done': todays_plan.pagesRead|default(0),
+              '@target': todays_plan.dailyTargetPages|default(0),
+              '@p': (todays_plan.dailyTargetPages|default(0)) == 1 ? '' : 's',
+            }) }}
+          </p>
+        {% else %}
+          <p>{{ "No daily reading goal set yet. (Goal creation UI is coming in a follow-up release; for now you can set a goal from the Quran.com mobile or web app and it will show up here.)"|t }}</p>
+        {% endif %}
+      {% endif %}
+    </section>
+
+    {# ===== RECENT READING POSITIONS ===== #}
+    <section class="quran-section quran-account-recent" aria-labelledby="recent-heading">
+      <h3 id="recent-heading">{{ 'Continue reading'|t }}</h3>
+      {% if recent_unavailable %}
+        <p class="quran-account-unavailable">{{ 'Recent reading positions are temporarily unavailable from Quran.com. Please try again in a few minutes.'|t }}</p>
+      {% elseif recent is not empty %}
+        <ul class="quran-account-list">
+          {% for r in recent %}
+            <li>
+              <a href="{{ r.jump_url }}">
+                {{ r.surah_name }}{% if r.verse %}, {{ 'verse @v'|t({'@v': r.verse}) }}{% endif %}
+              </a>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>{{ 'No recent reading positions yet.'|t }}</p>
+      {% endif %}
+    </section>
+
+    {# ===== BOOKMARKS ===== #}
+    <section class="quran-section quran-account-bookmarks" aria-labelledby="bookmarks-heading">
+      <h3 id="bookmarks-heading">{{ 'Your bookmarks'|t }}</h3>
+      {% if bookmarks_unavailable %}
+        <p class="quran-account-unavailable">{{ 'Bookmarks are temporarily unavailable from Quran.com. Please try again in a few minutes.'|t }}</p>
+      {% elseif bookmarks is not empty %}
+        <ul class="quran-account-list" id="qf-bookmarks-list">
+          {% for b in bookmarks %}
+            <li data-bookmark-id="{{ b.id }}">
+              <a href="{{ b.jump_url }}">
+                {{ b.surah_name }}, {{ 'verse @v'|t({'@v': b.verse}) }}
+              </a>
+              <button type="button" class="quran-btn quran-account-bookmark-remove"
+                      data-bookmark-id="{{ b.id }}"
+                      aria-label="{{ 'Remove bookmark @n'|t({'@n': b.surah_name ~ ' verse ' ~ b.verse}) }}">
+                {{ 'Remove'|t }}
+              </button>
+            </li>
+          {% endfor %}
+        </ul>
+      {% else %}
+        <p>{{ 'You have no bookmarks yet. Open the Quran Player and use the "Bookmark this surah" button while listening.'|t }}</p>
+      {% endif %}
+    </section>
+
+    {# ===== NOTES ===== #}
+    <section class="quran-section quran-account-notes" aria-labelledby="notes-heading">
+      <h3 id="notes-heading">{{ 'Your notes'|t }}</h3>
+
+      {% if notes_unavailable %}
+        <p class="quran-account-unavailable">{{ 'Notes are temporarily unavailable from Quran.com. Please try again in a few minutes.'|t }}</p>
+      {% elseif notes_needs_reconnect %}
+        <p class="quran-account-reconnect">
+          {{ 'Notes need an updated permission. Please disconnect and reconnect your Quran.com account to enable note-taking.'|t }}
+          <a href="{{ disconnect_url }}">{{ 'Disconnect, then reconnect'|t }}</a>
+        </p>
+      {% else %}
+        <form class="quran-account-note-form" id="qf-note-form" aria-label="{{ 'Add a note on a verse'|t }}">
+          <div class="quran-form-row">
+            <label for="note-surah">{{ 'Surah'|t }}</label>
+            <select id="note-surah" name="surah">
+              {% for s in surahs %}
+                <option value="{{ s.id }}">{{ s.id }}. {{ s.name_simple }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="quran-form-row">
+            <label for="note-verse">{{ 'Verse'|t }}</label>
+            <input type="number" id="note-verse" name="verse" min="1" max="286" value="1" inputmode="numeric" />
+          </div>
+          <div class="quran-form-row">
+            <label for="note-body">{{ 'Note'|t }}</label>
+            <textarea id="note-body" name="body" rows="3" maxlength="5000"
+                      aria-describedby="note-body-help" required></textarea>
+            <small id="note-body-help">{{ 'Up to 5,000 characters. Saved to your Quran.com account.'|t }}</small>
+          </div>
+          <div class="quran-form-row">
+            <button type="submit" class="quran-btn quran-btn-play" id="qf-note-submit">
+              {{ 'Save note'|t }}
+            </button>
+            <span id="qf-note-status" class="quran-form-status" role="status" aria-live="polite"></span>
+          </div>
+        </form>
+
+        <ul class="quran-account-list quran-account-notes-list" id="qf-notes-list" {% if notes is empty %}hidden{% endif %}>
+          {% for n in notes %}
+            <li data-note-id="{{ n.id }}">
+              {% if n.ranges is not empty %}
+                <strong>{{ n.ranges|join(', ') }}</strong>
+              {% endif %}
+              <p>{{ n.body }}</p>
+              <button type="button" class="quran-btn quran-btn-secondary quran-account-note-remove" data-note-id="{{ n.id }}" aria-label="{{ 'Remove this note'|t }}">{{ 'Remove'|t }}</button>
+            </li>
+          {% endfor %}
+        </ul>
+        <p id="qf-notes-empty" {% if notes is not empty %}hidden{% endif %}>{{ 'No notes yet.'|t }}</p>
+      {% endif %}
+    </section>
+
+    <p class="quran-account-disconnect">
+      <a href="{{ disconnect_url }}">{{ 'Disconnect this account'|t }}</a>
+    </p>
+
+  {% endif %}
+
+</div>
+
+<script>
+window.gablvmQfCsrf = {{ csrf_token|json_encode|raw }};
+</script>

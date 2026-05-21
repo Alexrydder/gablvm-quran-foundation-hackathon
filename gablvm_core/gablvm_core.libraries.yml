@@ -1,0 +1,182 @@
+# Sign in with Quran.com button on /user/login.
+qf-signin-button:
+  version: 1.0
+  css:
+    theme:
+      css/qf-signin-button.css: {}
+
+quran_player:
+  version: 1.9
+  css:
+    theme:
+      css/quran-player.css: {}
+  # Note: JavaScript is inline in the template (gablvm-quran-player.html.twig)
+  # to ensure proper DOM element availability and avoid duplicate event handlers.
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+
+# Bookmark + reading-session hooks for the Quran Player when the visitor's
+# Quran.com account is connected (attached conditionally by the controller).
+quran_player_qf:
+  version: 2.5
+  js:
+    js/quran-player-qf.js: {}
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+    - core/once
+
+# /quran/my-account dashboard interactions (bookmark remove, note add+remove).
+qf_account:
+  version: 1.4
+  css:
+    theme:
+      css/qf-account.css: {}
+  js:
+    js/qf-account.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+
+quran_tafsir_lab:
+  version: 1.1
+  css:
+    theme:
+      css/quran-player.css: {}
+      css/quran-tafsir-lab.css: {}
+  dependencies:
+    - core/drupal
+
+prayer_times:
+  version: 2.5
+  css:
+    theme:
+      css/prayer-times.css: {}
+  js:
+    js/prayer-times.js: {}
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+    - core/once
+
+hijri_calendar:
+  version: 1.x
+  css:
+    theme:
+      css/hijri-calendar.css: {}
+  js:
+    js/hijri-calendar.js: {}
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+    - core/once
+
+admin_forms:
+  version: 1.x
+  css:
+    theme:
+      css/admin-forms.css: {}
+  js:
+    js/admin-forms.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+
+global:
+  version: 1.x
+  css:
+    theme:
+      css/global.css: {}
+
+extlink_interstitial:
+  version: 1.4
+  css:
+    theme:
+      css/extlink-interstitial.css: {}
+  js:
+    js/extlink-interstitial.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+    - extlink/drupal.extlink
+
+language_selector:
+  version: 1.x
+  css:
+    theme:
+      css/language-selector.css: {}
+  js:
+    js/language-selector.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+
+newsletter_page:
+  version: 1.1
+  css:
+    theme:
+      css/newsletter-page.css: {}
+
+islamic_tools:
+  version: 1.x
+  css:
+    theme:
+      css/islamic-tools.css: {}
+
+admin_accessibility:
+  version: 1.x
+  css:
+    theme:
+      css/admin-accessibility.css: {}
+  js:
+    js/admin-accessibility.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+
+resources:
+  version: 1.1
+  css:
+    theme:
+      css/resources.css: {}
+
+event_timezone:
+  version: 1.x
+  js:
+    js/event-timezone.js: {}
+
+qibla_finder:
+  version: 1.2
+  css:
+    theme:
+      css/qibla-finder.css: {}
+  js:
+    js/qibla-finder.js: {}
+  dependencies:
+    - core/drupal
+    - core/drupalSettings
+    - core/once
+
+listen_aloud:
+  version: 1.4
+  css:
+    theme:
+      css/listen-aloud.css: {}
+  js:
+    js/listen-aloud.js: {}
+  dependencies:
+    - core/drupal
+    - core/once
+
+ramadan:
+  version: 1.x
+  css:
+    theme:
+      css/ramadan.css: {}
+  js:
+    js/ramadan.js: {}
+    js/greeting-banner.js: {}
+  dependencies:
+    - core/drupal
+
